@@ -17,6 +17,10 @@ with the Buzz tools. Each thread is one continuing OpenCode session.
 - **Activity:** the agent's conversations, whether each is working, and each one's full transcript:
   prompts, thinking, replies and tool calls, read from OpenCode's own history.
 - **Synced settings:** agent, model, thinking level and scope sync across your devices.
+- **Share to the Marketplace:** the agent's card menu offers **Share**, as for Buzz's own agents. It
+  lists the agent's name, picture, model and instructions under the `opencode` runtime; whoever adds
+  it needs this plugin, and runs it on their own OpenCode and providers. The OpenCode agent, thinking
+  level and workspace stay on your computer.
 - A failed turn says so in its thread and tags you.
 
 ## Requirements
@@ -28,7 +32,7 @@ with the Buzz tools. Each thread is one continuing OpenCode session.
 ## Install
 
 1. Download `opencode-harness-plugin.zip` from the
-   [latest release](https://github.com/dotcollectiveanz/buzz-opencode/releases/latest) and unzip it, or
+   [latest release](https://github.com/dotcollectiveanz/buzz-plugin-opencode/releases/latest) and unzip it, or
    clone this repo.
 2. In Buzz: **Settings → Plugins → Manage plugins → Add → Browse** under "Add from folder", and pick the
    unzipped folder (or `plugin/` in your clone). Use **Browse**, not drag and drop, so Buzz can offer
@@ -36,7 +40,7 @@ with the Buzz tools. Each thread is one continuing OpenCode session.
 3. Review the access it asks for, select **Install plugin**, and enable it if it shows as disabled.
 4. Go to **Agents**, create an agent with **OpenCode** as its Harness, add it to a channel and mention it.
 
-To install straight from GitHub instead, enter `https://github.com/dotcollectiveanz/buzz-opencode.git` in
+To install straight from GitHub instead, enter `https://github.com/dotcollectiveanz/buzz-plugin-opencode.git` in
 **Add** and pick the `plugin` folder.
 
 ### Access it asks for

@@ -81,6 +81,29 @@ export const carry = (saved: unknown): Carry => {
   };
 };
 
+/** The catalog runtime an OpenCode agent is shared as. Buzz has no OpenCode
+ * harness of its own, so only this plugin claims it. */
+export const SHARED_RUNTIME = "opencode";
+
+/** What a share or export lists (Buzz's agent menu offers Share only with
+ * this): the `opencode` runtime and the model, with the instructions from
+ * `carry`. The OpenCode agent, thinking level, workspace and anything else of
+ * this computer's aren't shared. */
+export const exportShared = (saved: unknown) => ({
+  runtime: SHARED_RUNTIME,
+  model: config(saved).model.trim(),
+});
+
+/** A shared `opencode` agent, imported as an OpenCode agent with its model;
+ * any other runtime is left to the type it belongs to. */
+export const importShared = (source: {
+  runtime?: string;
+  model: string;
+}): Config | undefined =>
+  source.runtime?.trim() === SHARED_RUNTIME
+    ? { ...DEFAULT_CONFIG, model: source.model.trim() }
+    : undefined;
+
 /** A brought-over agent keeps the instructions and workspace it carries. */
 export const adopt = (brought: Carry, saved: Config): Config => ({
   ...saved,

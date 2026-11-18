@@ -1,6 +1,6 @@
 {
   "name": "buzz-opencode",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Buzz plugin: agents that run on your local OpenCode.",
   "type": "module",
@@ -8,7 +8,7 @@
     "build": "node build.mjs",
     "build:dev": "node build.mjs --dev",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --dir src",
     "check": "npm run typecheck && npm test && node scripts/check.mjs",
     "types": "node scripts/types.mjs"
   },
@@ -27,6 +27,6 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dotcollectiveanz/buzz-opencode.git"
+    "url": "https://github.com/dotcollectiveanz/buzz-plugin-opencode.git"
   }
 }

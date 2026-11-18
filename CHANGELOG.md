@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0 (2026-11-18)
+
+- **Share to the Marketplace:** the agent's card menu now offers **Share**, as it does for Buzz's own
+  agents. Buzz has no OpenCode harness of its own, so the listing names the `opencode` runtime with the
+  agent's name, picture, model and instructions. Whoever adds it with this plugin installed gets an
+  OpenCode agent on that model, on their own OpenCode and providers. The OpenCode agent, thinking
+  level, workspace and conversations aren't shared.
+- **Import:** a shared `opencode` agent imports as OpenCode with its model. Listings for other runtimes
+  are left to their own harnesses.
+- **Releases on merge:** a version merged to `main` is tagged and released automatically, with its
+  changelog section as the notes and `opencode-harness-plugin.zip` attached.
+- Links point to the repository's current address, `dotcollectiveanz/buzz-plugin-opencode`.
+- `npm test` runs only this plugin's tests, not those of a Buzz checkout made by `npm run types`.
+
 ## 1.0.0 (2026-11-10)
 
 First public release.

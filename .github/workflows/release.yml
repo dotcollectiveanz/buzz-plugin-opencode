@@ -1,0 +1,84 @@
+# Releases each new version merged to main: when package.json's version has no
+# tag yet, runs the full check (with Buzz's plugin API types from BUZZ_REF in
+# scripts/types.mjs), then creates the tag vX.Y.Z and a GitHub release whose
+# notes are that version's section of CHANGELOG.md, with the plugin folder
+# attached as opencode-harness-plugin.zip (the name the README links to).
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Is this version released?
+        id: version
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "v$version is already released; nothing to do."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Release notes from CHANGELOG.md
+        if: steps.version.outputs.new == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          awk -v v="$VERSION" '
+            /^## / { if (found) exit; if (index($0, "## " v " ") == 1 || $0 == "## " v) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "::error::CHANGELOG.md has no section for $VERSION"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.version.outputs.new == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+        if: steps.version.outputs.new == 'true'
+
+      - name: Buzz's plugin API types, cached by the Buzz release they come from
+        if: steps.version.outputs.new == 'true'
+        id: types
+        uses: actions/cache@v6
+        with:
+          path: .buzz-author
+          key: buzz-author-${{ hashFiles('scripts/types.mjs') }}
+
+      - run: npm run types
+        if: steps.version.outputs.new == 'true' && steps.types.outputs.cache-hit != 'true'
+
+      - name: Check
+        if: steps.version.outputs.new == 'true'
+        run: npm run check
+
+      - name: Zip the plugin folder
+        if: steps.version.outputs.new == 'true'
+        run: (cd plugin && zip -r "$RUNNER_TEMP/opencode-harness-plugin.zip" .)
+
+      - name: Tag and release
+        if: steps.version.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.version }}
+        run: gh release create "$TAG" "$RUNNER_TEMP/opencode-harness-plugin.zip" --target "$GITHUB_SHA" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"

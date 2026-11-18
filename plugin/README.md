@@ -25,4 +25,4 @@ Buzz agents that run on your own [OpenCode](https://opencode.ai), with any provi
 
 OpenCode runs commands as you, so the agent acts only on your own mentions, or ones you attested.
 
-Source and issues: https://github.com/dotcollectiveanz/buzz-opencode
+Source and issues: https://github.com/dotcollectiveanz/buzz-plugin-opencode

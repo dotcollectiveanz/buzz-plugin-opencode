@@ -13,6 +13,8 @@ import {
   carry,
   config,
   DEFAULT_CONFIG,
+  exportShared,
+  importShared,
   syncedSettingsSchema,
   withSyncedSettings,
 } from "./settings";
@@ -69,6 +71,8 @@ export function apply(ctx: Context) {
     defaults: () => ({ config: DEFAULT_CONFIG }),
     adopt,
     carry,
+    exportShared,
+    importShared,
     summary: (agent) => {
       const { mode, model } = config(agent.config);
       return [mode, model].filter(Boolean).join(" · ") || "OpenCode";

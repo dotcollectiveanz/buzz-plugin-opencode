@@ -16,6 +16,12 @@ This repo is a Buzz desktop plugin (`opencode-harness`) that registers an OpenCo
   `npm run check` fails if it's stale.
 - **Manifest `host` changes need the owner's approval** on update in Buzz; keep them minimal, and update
   `scripts/check.mjs` and `src/opencode.test.ts` with them.
+- **Share lists the `opencode` runtime.** Buzz's agent menu offers Share for a type with
+  `exportShared` (`src/settings.ts`); a share's instructions come from `carry`. Buzz has no OpenCode
+  harness, so the listing names `opencode` with the model only: never the workspace, agent (`mode`),
+  thinking level or anything else of this computer's. `importShared` takes only an `opencode`
+  listing: Buzz imports a listing as the first type that accepts it, so never accept another runtime
+  (`claude`, `codex`, `goose`, `pi`), or this plugin would take Buzz's own agents' listings.
 - **Never pass anything but a checked `ses_…` id** to the `export` process (`src/transcript.ts`).
 
 ## Layout
@@ -27,7 +33,7 @@ This repo is a Buzz desktop plugin (`opencode-harness`) that registers an OpenCo
 | `src/acp/` | Buzz's ACP client, copied (see NOTICE.md); keep changes small and noted there |
 | `src/opencode.ts` | OpenCode's ACP hooks: model, thinking level and agent (`mode`) selection |
 | `src/models.ts` | Lists models, levels and agents from a short-lived `opencode acp` session |
-| `src/settings.ts` | Config, defaults, synced settings, and carry/adopt across harness changes |
+| `src/settings.ts` | Config, defaults, synced settings, `carry`/`adopt` across harness changes, and `exportShared`/`importShared` (Share and Import) |
 | `src/tabs.tsx` | New agent fields, Identity/Settings tab, Activity tab and transcript view |
 | `src/transcript.ts` | Reads `opencode session export` into Buzz's turn model |
 | `src/ui.tsx` | Buzz-styled controls |
@@ -43,7 +49,9 @@ This repo is a Buzz desktop plugin (`opencode-harness`) that registers an OpenCo
 
 ## Releases
 
-1. Update `version` in `package.json` and add notes to `CHANGELOG.md`.
+1. Update `version` in `package.json` and add a `## X.Y.Z (YYYY-MM-DD)` section to `CHANGELOG.md`.
 2. `npm run build && npm run check`.
-3. Commit, tag `vX.Y.Z`, push with tags, and create a GitHub release with the changelog section and
-   `opencode-harness-plugin.zip` (the contents of `plugin/`) attached.
+3. Merge to `main`. The Release workflow (`.github/workflows/release.yml`) releases each version
+   that has no tag yet: it runs the check, then creates the tag `vX.Y.Z` and a GitHub release with
+   that changelog section and `opencode-harness-plugin.zip` (the contents of `plugin/`) attached. A
+   merge that doesn't change the version releases nothing. Never tag or release by hand.
