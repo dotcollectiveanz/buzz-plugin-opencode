@@ -1,18 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { geminiKey, LIVE_MODEL, liveSetup, openLiveVoice, type OpenSocket } from "./live";
-
-const file = (text: string) => async () => new TextEncoder().encode(text);
-
-describe("geminiKey", () => {
-  it("reads GEMINI_API_KEY from the Gemini CLI's .env", async () => {
-    expect(await geminiKey(file("# keys\nexport GEMINI_API_KEY=\"AIza-1\"\n"))).toBe("AIza-1");
-    expect(await geminiKey(file("GOOGLE_API_KEY=AIza-2"))).toBe("AIza-2");
-  });
-  it("is undefined without one", async () => {
-    expect(await geminiKey(file("OTHER=1\nGEMINI_API_KEY=\n"))).toBeUndefined();
-    expect(await geminiKey(async () => { throw new Error("ENOENT"); })).toBeUndefined();
-  });
-});
+import { LIVE_MODEL, liveSetup, openLiveVoice, type OpenSocket } from "./live";
 
 describe("liveSetup", () => {
   it("speaks as the agent and hands real work to ask_agent, without blocking", () => {

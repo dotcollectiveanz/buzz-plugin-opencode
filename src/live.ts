@@ -4,8 +4,8 @@
 // that needs the agent to `ask_agent`, which runs a turn in the room's OpenCode
 // session without blocking the conversation. The turn's answer comes back to
 // say, and what the agent posts for its owner elsewhere is said too. The key is
-// read where the Gemini CLI keeps it: GEMINI_API_KEY in ~/.gemini/.env.
-import type { AgentType, Host } from "./buzz";
+// the one set in the plugin's Settings card (src/gemini.tsx).
+import type { AgentType } from "./buzz";
 import type { Config } from "./settings";
 import {
   base64,
@@ -23,39 +23,11 @@ type Connection = Awaited<ReturnType<NonNullable<AgentType<Config>["voice"]>>>;
 export const LIVE_MODEL = "models/gemini-3.8-live";
 const LIVE_URL =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
-const ENV_PATHS = ["~/.gemini/.env"];
-const ENV_NAMES = ["GEMINI_API_KEY", "GOOGLE_API_KEY"];
 const FRAME = 960;
 const LEAD_FRAMES = 3;
 /** Owner audio is sent in pieces of about this many 48 kHz samples (100 ms). */
 const CHUNK = 4_800;
 const TOOL = "ask_agent";
-
-/** The Gemini API key in the Gemini CLI's ~/.gemini/.env, if there is one. */
-export async function geminiKey(
-  readFile: NonNullable<Host["readFile"]>,
-): Promise<string | undefined> {
-  for (const path of ENV_PATHS) {
-    let text: string;
-    try {
-      text = new TextDecoder().decode(await readFile(path));
-    } catch {
-      continue;
-    }
-    for (const name of ENV_NAMES) {
-      const match = new RegExp(
-        `^\\s*(?:export\\s+)?${name}\\s*=\\s*(.*)$`,
-        "m",
-      ).exec(text);
-      const value = match?.[1]
-        ?.trim()
-        .replace(/^(['"])(.*)\1$/, "$2")
-        .trim();
-      if (value) return value;
-    }
-  }
-  return undefined;
-}
 
 /** The session's setup: the agent's voice, with `ask_agent` for real work. */
 export function liveSetup(name: string, handle?: string) {

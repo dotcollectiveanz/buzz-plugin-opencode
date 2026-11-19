@@ -1,21 +1,17 @@
 /// <reference types="node" />
 // A real Gemini Live session through openLiveVoice, on the key in
-// ~/.gemini/.env: a typed request stands in for speech, the model hands it to
+// GEMINI_API_KEY: a typed request stands in for speech, the model hands it to
 // ask_agent, and the stand-in agent's answer comes back as audio. Nothing
 // reaches Buzz. Run with GEMINI_LIVE=1.
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
-import { geminiKey, openLiveVoice } from "./live";
+import { openLiveVoice } from "./live";
 
 const LIVE = process.env.GEMINI_LIVE === "1";
-const read = async (path: string) =>
-  new Uint8Array(readFileSync(path.replace(/^~/, homedir())));
 
 describe.skipIf(!LIVE)("Gemini Live", () => {
   it("hands a request to ask_agent and says the answer", { timeout: 60_000 }, async () => {
-    const key = await geminiKey(read);
-    expect(key, "GEMINI_API_KEY in ~/.gemini/.env").toBeTruthy();
+    const key = process.env.GEMINI_API_KEY;
+    expect(key, "GEMINI_API_KEY").toBeTruthy();
     const abort = new AbortController();
     const seat = {
       agent: { name: "Ada" },

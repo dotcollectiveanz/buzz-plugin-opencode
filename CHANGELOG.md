@@ -2,11 +2,13 @@
 
 ## 1.4.0 (2026-11-19)
 
-- **Live voice with Gemini:** with a Gemini API key in `~/.gemini/.env` (`GEMINI_API_KEY=…`, where the
-  Gemini CLI keeps it), a Huddle runs on Gemini Live (`gemini-3.8-live`), a speech-to-speech model.
-  It answers small talk at once, lets you talk over it, and hands anything that needs the agent to
-  the agent's OpenCode session in the background, so you can keep talking while it works. The answer
-  is said when it's ready. Without a key, voice stays on OpenRouter as before.
+- **Live voice with Gemini:** add a Gemini API key in **Settings → OpenCode voice** and Huddles run on
+  Gemini Live (`gemini-3.8-live`), a speech-to-speech model, for both listening and speaking. It answers
+  small talk at once, lets you talk over it, and hands anything that needs the agent to the agent's
+  OpenCode session in the background, so you can keep talking while it works. The answer is said when
+  it's ready. Without a key, voice stays on OpenRouter as before.
+- The key is checked with Google when you save it and kept in this computer's Buzz storage only. It
+  isn't synced. The Claude (subscription) plugin uses the same saved key.
 - Updating asks you to approve access to `https://generativelanguage.googleapis.com`.
 
 ## 1.3.0 (2026-11-19)

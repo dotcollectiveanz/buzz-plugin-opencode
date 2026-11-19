@@ -32,9 +32,9 @@ with the Buzz tools. Each thread is one continuing OpenCode session.
   over it to cut it off, or add to a request while it works. While you're in the Huddle, a message it
   posts elsewhere that tags you is read aloud too, so you can leave a Huddle open and let it call on
   you. Use headphones, or its own voice can cut it off.
-- **Live voice with Gemini:** put a Gemini API key in `~/.gemini/.env` as `GEMINI_API_KEY=…` (where the
-  Gemini CLI looks) and Huddles run on Gemini Live instead: a speech-to-speech model that talks with you
-  straight away and hands real work to the agent in the background, so it's a conversation rather than
+- **Live voice with Gemini:** add a Gemini API key in **Settings → OpenCode voice** and Huddles run on
+  Gemini Live instead, for listening and speaking, with no OpenRouter needed. It's a speech-to-speech
+  model that talks with you straight away and hands real work to the agent in the background, so it's a conversation rather than
   turn by turn.
 - A failed turn says so in its thread and tags you.
 
@@ -64,7 +64,6 @@ To install straight from GitHub instead, enter `https://github.com/dotcollective
 - Serve the Buzz tools to OpenCode on this computer (MCP), acting as the agent.
 - Read files you ask the agent to upload, from its workspace, and OpenCode's OpenRouter login
   (`~/.local/share/opencode/auth.json`) for voice.
-- Read the Gemini API key in `~/.gemini/.env`, if you've put one there, for live voice.
 - Reach `https://generativelanguage.googleapis.com`, for live voice with Gemini only.
 - Reach `https://openrouter.ai`, for voice only. Your Huddle speech goes there to be transcribed and
   answered.
