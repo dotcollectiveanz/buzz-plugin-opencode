@@ -4,6 +4,7 @@ import {
   likeness,
   openRouterKey,
   openVoice,
+  parts,
   readSpoken,
   speakRequest,
   toWav,
@@ -177,6 +178,26 @@ describe("openVoice", () => {
     connection.close();
   });
 
+  it("starts speaking after the first sentence, voicing the rest while it plays", async () => {
+    const { seat, abort } = seatFor();
+    const answer = "Merged and released.\nTake the update when Buzz offers it. Then start a Huddle.";
+    const [first, rest] = parts(answer);
+    const request = speakAs(first!, rest!);
+    const connection = await openVoice(
+      seat as never,
+      { readFile: auth, request } as never,
+      vi.fn(async () => answer),
+      vi.fn(async () => {}),
+    );
+    speakTo(connection);
+    await vi.waitFor(() => expect(seat.output).toHaveBeenCalledTimes(10), { timeout: 3000 });
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(request.mock.calls[1]![0].body)).toEqual(speakRequest(first!));
+    expect(JSON.parse(request.mock.calls[2]![0].body)).toEqual(speakRequest(rest!));
+    abort.abort();
+    connection.close();
+  });
+
   it("plays the second try when it says the line", async () => {
     const { seat, abort } = seatFor();
     const line = "My core memory has three main parts.";
@@ -196,6 +217,19 @@ describe("openVoice", () => {
 });
 
 describe("speaking the agent's line", () => {
+  it("voices the first sentence on its own and groups the rest", () => {
+    expect(parts("Done.")).toEqual(["Done."]);
+    expect(parts("Hi Brendon\n\nMerged and released as v1.2.3. Take the update. Then start a Huddle.")).toEqual([
+      "Hi Brendon Merged and released as v1.2.3.",
+      "Take the update. Then start a Huddle.",
+    ]);
+    const long = Array.from({ length: 12 }, (_, i) => `Sentence number ${i} is about this long.`).join(" ");
+    const pieces = parts(long);
+    expect(pieces[0]).toBe("Sentence number 0 is about this long.");
+    expect(pieces.slice(1).every((p) => p.length <= 240)).toBe(true);
+    expect(pieces.join(" ")).toBe(long);
+  });
+
   it("gives the line in the system prompt, as the agent's own, with nothing to answer", () => {
     const request = speakRequest("Should I merge it?");
     expect(request.model).toBe("openai/gpt-audio-mini");

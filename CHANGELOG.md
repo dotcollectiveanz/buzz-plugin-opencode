@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.3 (2026-11-19)
+
+- **The voice starts sooner:** the agent's answer was voiced in one go, so nothing played until the
+  whole of it was ready. Now its first sentence is voiced on its own and plays as soon as it's ready,
+  while the rest is voiced in groups of sentences, at most two ahead of what's playing. Each piece is
+  still checked against the answer, and one the voice won't say faithfully is left out.
+- The voice's line is marked off in its instructions, so it no longer drops a lead-in such as
+  "First, who I am:" as if it were a direction.
+
 ## 1.2.2 (2026-11-19)
 
 - **The voice says the agent's answer, as the agent:** `openai/gpt-audio-mini` got the answer as a
