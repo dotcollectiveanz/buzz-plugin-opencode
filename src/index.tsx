@@ -114,8 +114,11 @@ export function apply(ctx: Context) {
     ...(desktop
       ? {
           voice: (seat) =>
-            openVoice(seat, host, (heard, listening) =>
-              runtime.voiceTurn(seat, heard, listening),
+            openVoice(
+              seat,
+              host,
+              (heard) => runtime.voiceTurn(seat, heard),
+              (speaker, text) => runtime.voicePost(seat, speaker, text),
             ),
         }
       : {}),

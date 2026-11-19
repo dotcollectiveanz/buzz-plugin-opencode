@@ -24,9 +24,10 @@ with the Buzz tools. Each thread is one continuing OpenCode session.
 - **Huddle voice:** start a Huddle in your DM with the agent, or add it from the Huddle's members, and
   talk to it. `google/gemini-2.5-flash` transcribes your speech, the agent works on it in its OpenCode
   session for that room (with its tools, as for a typed message), and `openai/gpt-audio-mini` reads
-  its answer aloud. Both run through OpenRouter on the key OpenCode is signed in with
-  (`opencode auth login`). Both sides' words are posted in the Huddle. If you leave before it answers,
-  the work carries on and the answer is posted in the chat. Expect a few seconds per reply, more when
+  its answer aloud, word for word, in the agent's own voice. Both run through OpenRouter on the key
+  OpenCode is signed in with (`opencode auth login`). Both sides are posted in the room as plain
+  messages from the agent: your words under your name, its answer as its own. If you leave before it
+  answers, the work carries on and the answer is still posted. Expect a few seconds per reply, more when
   there's work to do.
 - A failed turn says so in its thread and tags you.
 

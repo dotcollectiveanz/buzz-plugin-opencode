@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.2 (2026-11-19)
+
+- **The voice says the agent's answer, as the agent:** `openai/gpt-audio-mini` got the answer as a
+  message, so it often replied to it ("I hear you're describing your core memory…") instead of saying
+  it. The answer is now its line to perform, word for word in the first person, with nothing to reply
+  to. What it says is checked against the answer: if it strays, it tries once more, then stays quiet
+  rather than say something the agent didn't.
+- **Plain Huddle messages:** the Huddle's lines are no longer Buzz's "(transcribed by …)" posts. Your
+  words are posted under your name ("Name: …"), and the agent's answer as a normal message from the agent.
+
 ## 1.2.1 (2026-11-19)
 
 - **Huddle voice answers again:** every spoken request failed with "This conversation was not admitted

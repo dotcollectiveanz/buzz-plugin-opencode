@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   fromPcm16,
+  likeness,
   openRouterKey,
   openVoice,
   readSpoken,
+  speakRequest,
   toWav,
   Utterances,
 } from "./voice";
@@ -107,44 +109,110 @@ describe("openVoice", () => {
   it("refuses without an OpenRouter login", async () => {
     const { seat } = seatFor();
     const host = { readFile: async () => new TextEncoder().encode("{}"), request: vi.fn() };
-    await expect(openVoice(seat as never, host as never, vi.fn())).rejects.toThrow(/opencode auth login/);
+    await expect(openVoice(seat as never, host as never, vi.fn(), vi.fn())).rejects.toThrow(/opencode auth login/);
   });
 
-  it("transcribes speech, runs it as a turn, says the answer and posts both lines", async () => {
-    const { seat, abort } = seatFor();
+  const voiced = (said: string) => {
     const pcm = new Uint8Array(24_000 * 2 * 0.1); // 100 ms of silence
-    const request = vi.fn(async ({ body }: { body: string; headers?: Record<string, string> }) => {
+    return `data: ${JSON.stringify({ choices: [{ delta: { audio: { data: btoa(String.fromCharCode(...pcm)), transcript: said } } }] })}\ndata: [DONE]\n`;
+  };
+  const speakAs = (...said: string[]) =>
+    vi.fn(async ({ body }: { body: string; headers?: Record<string, string> }) => {
       const sent = JSON.parse(body);
-      if (sent.stream) {
-        expect(sent.messages[1]).toEqual({ role: "user", content: "Hello Brendon." });
-        return {
-          status: 200,
-          headers: {},
-          body: `data: ${JSON.stringify({ choices: [{ delta: { audio: { data: btoa(String.fromCharCode(...pcm)), transcript: "Hello Brendon." } } }] })}\ndata: [DONE]\n`,
-        };
-      }
+      if (sent.stream) return { status: 200, headers: {}, body: voiced(said.shift() ?? "") };
       return {
         status: 200,
         headers: {},
         body: JSON.stringify({ choices: [{ message: { content: "Hi Ada" } }] }),
       };
     });
-    const think = vi.fn(async () => "Hello Brendon.");
-    const connection = await openVoice(seat as never, { readFile: auth, request } as never, think);
+  const speakTo = (connection: { input(f: number[]): void }) => {
     feed(connection, tone(0.2, 0));
     feed(connection, tone(1, 0.3));
     feed(connection, tone(1, 0));
-    await vi.waitFor(() => expect(seat.transcript).toHaveBeenCalledTimes(2), { timeout: 3000 });
-    expect(seat.transcript).toHaveBeenNthCalledWith(1, "owner", "Hi Ada");
-    expect(seat.transcript).toHaveBeenNthCalledWith(2, "agent", "Hello Brendon.");
-    await vi.waitFor(() => expect(seat.output).toHaveBeenCalledTimes(5));
+  };
+
+  it("transcribes speech, runs it as a turn, posts what was heard and says the answer", async () => {
+    const { seat, abort } = seatFor();
+    const request = speakAs("Hello Brendon.");
+    const think = vi.fn(async () => "Hello Brendon.");
+    const post = vi.fn(async () => {});
+    const connection = await openVoice(seat as never, { readFile: auth, request } as never, think, post);
+    speakTo(connection);
+    await vi.waitFor(() => expect(seat.output).toHaveBeenCalledTimes(5), { timeout: 3000 });
     expect((seat.output.mock.calls[0] as unknown[])[0]).toHaveLength(960);
-    expect(think).toHaveBeenCalledWith("Hi Ada", expect.any(Function));
-    expect((think.mock.calls[0] as unknown as [string, () => boolean])[1]()).toBe(true);
+    // The owner's words are posted by the plugin, and the answer by the turn:
+    // never Buzz's "(transcribed by …)" lines.
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith("owner", "Hi Ada");
+    expect(seat.transcript).not.toHaveBeenCalled();
+    expect(think).toHaveBeenCalledWith("Hi Ada");
     const speak = JSON.parse(request.mock.calls[1]![0].body);
-    expect(speak.model).toBe("openai/gpt-audio-mini");
+    expect(speak).toEqual(speakRequest("Hello Brendon."));
     expect(request.mock.calls[0]![0].headers?.Authorization).toBe("Bearer sk-or-1");
     abort.abort();
     connection.close();
+  });
+
+  it("tries again when the voice answers the line instead of saying it, then stays quiet", async () => {
+    const { seat, abort } = seatFor();
+    const line = "My core memory has three main parts.";
+    const request = speakAs(
+      "I hear you're describing your core memory. That's thoughtful.",
+      "It sounds like your memory is well organised.",
+    );
+    const post = vi.fn(async () => {});
+    const connection = await openVoice(
+      seat as never,
+      { readFile: auth, request } as never,
+      vi.fn(async () => line),
+      post,
+    );
+    speakTo(connection);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(3), { timeout: 3000 });
+    await vi.waitFor(() => expect(seat.thinking).toHaveBeenLastCalledWith(false));
+    expect(seat.output).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(1);
+    abort.abort();
+    connection.close();
+  });
+
+  it("plays the second try when it says the line", async () => {
+    const { seat, abort } = seatFor();
+    const line = "My core memory has three main parts.";
+    const request = speakAs("I hear you're describing your core memory.", line);
+    const connection = await openVoice(
+      seat as never,
+      { readFile: auth, request } as never,
+      vi.fn(async () => line),
+      vi.fn(async () => {}),
+    );
+    speakTo(connection);
+    await vi.waitFor(() => expect(seat.output).toHaveBeenCalledTimes(5), { timeout: 3000 });
+    expect(request).toHaveBeenCalledTimes(3);
+    abort.abort();
+    connection.close();
+  });
+});
+
+describe("speaking the agent's line", () => {
+  it("gives the line in the system prompt, as the agent's own, with nothing to answer", () => {
+    const request = speakRequest("Should I merge it?");
+    expect(request.model).toBe("openai/gpt-audio-mini");
+    expect(request.messages[0]!.role).toBe("system");
+    expect(request.messages[0]!.content).toContain("Should I merge it?");
+    expect(request.messages[0]!.content).toContain("first-person");
+    expect(request.messages[1]).toEqual({ role: "user", content: "Action" });
+  });
+
+  it("measures how closely the voice kept to the line", () => {
+    expect(likeness("I'll do it.", "I\u2019ll do it")).toBe(1);
+    expect(likeness("Done. I've posted it in the chat.", "Done, I've posted it in the chat!")).toBe(1);
+    expect(
+      likeness(
+        "My core memory has three main parts.",
+        "I hear you're describing how your core memory is structured.",
+      ),
+    ).toBeLessThan(0.8);
   });
 });
