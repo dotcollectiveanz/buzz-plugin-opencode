@@ -38,6 +38,8 @@ const PROMPTS_KEY = "opencode-harness.prompts.v1:";
 /** Each agent's saved system prompts stay under this many characters. */
 const PROMPTS_BUDGET = 600_000;
 const TITLE_LIMIT = 80;
+/** The plugin id (plugin/manifest.json) a Huddle's speech is admitted under. */
+const VOICE_PLUGIN = "opencode-harness";
 
 type HarnessPrompt = Awaited<
   ReturnType<Agents["harness"]["turnPrompt"]>
@@ -499,12 +501,32 @@ export class OpenCodeRuntime {
         : label?.name
           ? `#${label.name}`
           : channelId.slice(0, 8);
-    const conversation: HarnessConversation = {
-      key: channelId,
-      channel: channelId,
-      topLevel: true,
-      where,
-    };
+    // The kit's tools and replies take only a conversation it admitted, so
+    // the Huddle's speech is admitted as this plugin's own wake in the room,
+    // at its top level. The wake is local and never published.
+    const at = Date.now();
+    const conversation = await this.kit.conversation(
+      {
+        trigger: {
+          type: "plugin",
+          plugin: VOICE_PLUGIN,
+          channel: channelId,
+          topLevel: true,
+          text: heard,
+          id: `voice:${channelId}:${at}`,
+          at,
+        },
+        channelId,
+        agent,
+        config: settings,
+        signal: AbortSignal.timeout(30_000),
+        workingUntil: () => undefined,
+        current: () => true,
+      } as Delivery,
+      "channel",
+    );
+    if (!conversation)
+      throw new Error("Buzz did not admit this Huddle's conversation");
     const { key } = conversation;
     const prior = entry.policies.get(key);
     let interrupted = false;
