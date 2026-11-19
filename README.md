@@ -22,11 +22,12 @@ with the Buzz tools. Each thread is one continuing OpenCode session.
   it needs this plugin, and runs it on their own OpenCode and providers. The OpenCode agent, thinking
   level and workspace stay on your computer.
 - **Huddle voice:** start a Huddle in your DM with the agent, or add it from the Huddle's members, and
-  talk to it. Your speech is transcribed by `google/gemini-2.5-flash` and answered aloud by
-  `openai/gpt-audio-mini`, both through OpenRouter on the OpenRouter key OpenCode is signed in with
-  (`opencode auth login`). Both sides' words are posted in the Huddle. Voice replies only talk: they
-  don't run tools, read files or post; type a request in the chat for that. Expect a few seconds per
-  reply.
+  talk to it. `google/gemini-2.5-flash` transcribes your speech, the agent works on it in its OpenCode
+  session for that room (with its tools, as for a typed message), and `openai/gpt-audio-mini` reads
+  its answer aloud. Both run through OpenRouter on the key OpenCode is signed in with
+  (`opencode auth login`). Both sides' words are posted in the Huddle. If you leave before it answers,
+  the work carries on and the answer is posted in the chat. Expect a few seconds per reply, more when
+  there's work to do.
 - A failed turn says so in its thread and tags you.
 
 ## Requirements

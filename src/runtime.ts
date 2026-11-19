@@ -58,6 +58,19 @@ export function sessionTitle(
   return `${title}${suffix}`;
 }
 
+/** A Huddle turn's prompt: the owner's words, and how to answer out loud. */
+export function voicePrompt(where: string, heard: string) {
+  return [
+    `<huddle-voice>`,
+    `Your owner said this out loud to you in a Huddle (a voice call) in ${where}:`,
+    JSON.stringify(heard),
+    `</huddle-voice>`,
+    "It is a request from your owner, as if they had typed it to you. Do any work it asks for with your tools, as for a message.",
+    "Your final message is read aloud to them and posted in the Huddle as what you said: write it as a few short, plain spoken sentences, with no markdown, lists, code or links, and don't also post it with the Buzz send tool.",
+    "Use send only for what they ask you to post, or for what needs writing down, such as links or long results; then say briefly that you posted it.",
+  ].join("\n");
+}
+
 /** The thread an event belongs to, or the event itself as its root. */
 function threadRoot(event: { id: string; tags: readonly (readonly string[])[] }) {
   let root: string | undefined;
@@ -455,6 +468,88 @@ export class OpenCodeRuntime {
     void handoff.done
       .catch((error) => this.report(agent, conversation, String(error)))
       .catch((error) => console.warn("opencode handover failed", error));
+  }
+
+  /** Runs what the owner said in a Huddle as a turn in the room's session,
+   * with its tools, and gives back the final message to say aloud, or posts
+   * it once nobody is `listening`. Speech is not a message, so the session's
+   * cursor stays where text left it. */
+  async voiceTurn(
+    seat: Readonly<{
+      agent: Agent;
+      conversation: Readonly<{ channelId: string }>;
+      config?: unknown;
+      team?: string;
+    }>,
+    heard: string,
+    listening: () => boolean,
+  ): Promise<string> {
+    const agent = this.buzz.handle(seat.agent.key);
+    if (!agent) throw new Error("The agent isn't running here");
+    const settings = config(seat.config ?? seat.agent.config);
+    const entry = this.entry(agent.key, settings);
+    if (seat.team !== undefined) entry.team = seat.team;
+    // A session's system prompt needs only the agent and its teams.
+    entry.delivery ??= { agent, team: entry.team } as unknown as Delivery;
+    const { channelId } = seat.conversation;
+    const label = this.channelLabel(agent.key, channelId);
+    const where =
+      label?.channelType === "dm"
+        ? "DM"
+        : label?.name
+          ? `#${label.name}`
+          : channelId.slice(0, 8);
+    const conversation: HarnessConversation = {
+      key: channelId,
+      channel: channelId,
+      topLevel: true,
+      where,
+    };
+    const { key } = conversation;
+    const prior = entry.policies.get(key);
+    let interrupted = false;
+    const done = (async () => {
+      await prior?.settled.catch(() => undefined);
+      if (interrupted) throw new Error("Stopped");
+      entry.tools.set(
+        key,
+        this.kit.tools(agent, conversation, { read: this.reader(entry) }),
+      );
+      return entry.sessions.deliver(key, voicePrompt(where, heard), undefined, {
+        title: sessionTitle(entry.name, where),
+        activityScope: channelId,
+      });
+    })();
+    const policy = {
+      topLevel: true,
+      handed: done,
+      settled: done.then(
+        () => entry.sessions.idle(key),
+        () => undefined,
+      ),
+      cancel() {
+        interrupted = true;
+        prior?.cancel();
+      },
+    };
+    entry.policies.set(key, policy);
+    this.notify();
+    void policy.settled.then(() => {
+      if (entry.policies.get(key) !== policy) return;
+      entry.policies.delete(key);
+      this.notify();
+    });
+    const result = await done;
+    if (!result.ok) throw new Error(result.error ?? "The turn failed");
+    const text =
+      result.text?.trim() ||
+      (result.answered ? "Done. I've posted it in the chat." : "Done.");
+    // Left the call while it worked: the answer goes where they'll read it.
+    if (!listening() && result.text?.trim())
+      await this.kit
+        .reply(agent, conversation, text)
+        .catch((error) => console.warn("opencode could not post", error));
+    return text;
   }
 
   /** Runs a standalone turn, such as a watch's or a timer's, in a one-off

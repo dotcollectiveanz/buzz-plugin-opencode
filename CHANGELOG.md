@@ -2,10 +2,11 @@
 
 ## 1.2.0 (2026-11-19)
 
-- **Huddle voice:** OpenCode agents can join a Huddle and talk. Your speech is cut into utterances,
-  transcribed by `google/gemini-2.5-flash` and answered aloud by `openai/gpt-audio-mini`, through
-  OpenRouter on the key OpenCode is signed in with. Both sides' words are posted in the Huddle. Voice
-  replies talk only: they run no tools. Updating asks you to approve access to `https://openrouter.ai`.
+- **Huddle voice:** OpenCode agents can join a Huddle and talk. `google/gemini-2.5-flash` transcribes
+  your speech, the agent works on it in its OpenCode session for that room, with its tools as for a
+  typed message, and `openai/gpt-audio-mini` reads the answer aloud. Both run through OpenRouter on the
+  key OpenCode is signed in with. Both sides' words are posted in the Huddle, and an answer that comes
+  after you leave is posted in the chat. Updating asks you to approve access to `https://openrouter.ai`.
 
 ## 1.1.0 (2026-11-18)
 

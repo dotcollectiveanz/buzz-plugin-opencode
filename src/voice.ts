@@ -1,8 +1,9 @@
 // Huddle voice for OpenCode agents, through OpenRouter. OpenCode has no live
 // audio, so a seat is a loop: the owner's speech is cut into utterances,
-// transcribed by an audio-input model, answered by an audio-output model, and
-// played back into the room. Voice replies talk; they run no tools. The key
-// is OpenCode's own OpenRouter login, read where `opencode auth login` keeps it.
+// transcribed by an audio-input model, run as a turn in the agent's OpenCode
+// session for the room (with its tools), and its final message read aloud by
+// an audio-output model. The key is OpenCode's own OpenRouter login, read
+// where `opencode auth login` keeps it.
 import type { AgentType, Host } from "./buzz";
 import type { Config } from "./settings";
 
@@ -29,7 +30,6 @@ const END_SILENCE_MS = 700;
 const MIN_SPEECH_MS = 300;
 const MAX_SPEECH_MS = 30_000;
 const LEAD_FRAMES = 3;
-const HISTORY = 20;
 
 /** The OpenRouter key OpenCode signed in with, or undefined without one. */
 export async function openRouterKey(
@@ -196,20 +196,17 @@ export class Utterances {
   }
 }
 
-type Turn = { role: "user" | "assistant"; content: string };
-
-function instructions(seat: Seat) {
-  const own = (seat.config as Partial<Config> | undefined)?.instructions?.trim();
-  return [
-    `You are ${seat.agent.name || "a Buzz agent"}, talking out loud with your owner in a Buzz Huddle (a voice call).`,
-    "Answer in a few short, natural spoken sentences: no lists, markdown, code or links.",
-    "In this call you can talk but cannot run tools, read files or post messages. When asked to do work, say so briefly and suggest they type the request in the chat, where you can do it.",
-    ...(own ? [`Your standing instructions:\n${own}`] : []),
-  ].join("\n");
-}
+/** Runs what the owner said as a turn, and gives back what to say. Leaving
+ * the Huddle doesn't stop the work; `listening` says whether anyone will hear
+ * the answer. */
+export type Think = (heard: string, listening: () => boolean) => Promise<string>;
 
 /** Opens a Huddle seat for an OpenCode agent. */
-export async function openVoice(seat: Seat, host: Host): Promise<Connection> {
+export async function openVoice(
+  seat: Seat,
+  host: Host,
+  think: Think,
+): Promise<Connection> {
   seat.signal.throwIfAborted();
   if (seat.agent.protection)
     throw new Error("Voice is unavailable for protected agents");
@@ -221,7 +218,6 @@ export async function openVoice(seat: Seat, host: Host): Promise<Connection> {
     );
   seat.signal.throwIfAborted();
 
-  const history: Turn[] = [];
   let busy = false;
   let closed = false;
   const queue: Float32Array[] = [];
@@ -275,12 +271,16 @@ export async function openVoice(seat: Seat, host: Host): Promise<Connection> {
     return text && text !== NO_SPEECH ? text : undefined;
   };
 
-  const speak = async () => {
+  const speak = async (text: string) => {
     const body = await post({
       model: SPEAK_MODEL,
       messages: [
-        { role: "system", content: instructions(seat) },
-        ...history.slice(-HISTORY),
+        {
+          role: "system",
+          content:
+            "You are a text-to-speech voice. Read the user's message aloud exactly as written, in a natural, friendly tone. Add nothing, answer nothing, and leave nothing out.",
+        },
+        { role: "user", content: text },
       ],
       modalities: ["text", "audio"],
       audio: { voice: SPEAK_VOICE, format: "pcm16" },
@@ -316,15 +316,13 @@ export async function openVoice(seat: Seat, host: Host): Promise<Connection> {
       const heard = await listen(samples);
       if (closed || !heard) return;
       void say("owner", heard);
-      history.push({ role: "user", content: heard });
-      const reply = await speak();
+      const reply = await think(heard, () => !closed);
+      if (closed) return;
+      void say("agent", reply);
+      const spoken = await speak(reply);
       if (closed) return;
       seat.thinking?.(false);
-      if (reply.transcript) {
-        history.push({ role: "assistant", content: reply.transcript });
-        void say("agent", reply.transcript);
-      }
-      await play(fromPcm16(reply.pcm));
+      await play(fromPcm16(spoken.pcm));
     } catch (error) {
       if (closed) return;
       const reason = error instanceof Error ? error.message : String(error);

@@ -109,8 +109,16 @@ export function apply(ctx: Context) {
       run: (agent, place, action) => runtime.session(agent, place, action),
       subscribe: (listener) => runtime.subscribe(listener),
     },
-    // Huddle voice through OpenRouter: talk only, no tools (src/voice.ts).
-    ...(desktop ? { voice: (seat) => openVoice(seat, host) } : {}),
+    // Huddle voice: speech in and out through OpenRouter, the work in the
+    // room's OpenCode session (src/voice.ts).
+    ...(desktop
+      ? {
+          voice: (seat) =>
+            openVoice(seat, host, (heard, listening) =>
+              runtime.voiceTurn(seat, heard, listening),
+            ),
+        }
+      : {}),
     run: (delivery) => runtime.run(delivery),
     runOnce: (turn) => runtime.runOnce(turn),
     timeoutMs: HANDOVER_MS,
