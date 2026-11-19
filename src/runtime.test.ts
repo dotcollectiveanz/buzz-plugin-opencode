@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { expect, it, vi } from "vitest";
 import type { HostProcessOptions } from "./acp/host";
-import { OpenCodeRuntime, sessionTitle, voicePrompt } from "./runtime";
+import { needsOwner, OpenCodeRuntime, sessionTitle, voicePrompt } from "./runtime";
 import { DEFAULT_CONFIG } from "./settings";
 
 const AGENT = "a".repeat(64);
@@ -286,4 +286,13 @@ it("asks for a spoken answer to the owner's words", () => {
   const prompt = voicePrompt("DM", 'Say "hi"');
   expect(prompt).toContain('"Say \\"hi\\""');
   expect(prompt).toContain("read aloud");
+});
+
+it("knows when a send asks for the owner", () => {
+  const owner = "b".repeat(64);
+  expect(needsOwner({ text: "Done", mentions: [owner] }, owner, "Brendon")).toBe(true);
+  expect(needsOwner({ text: "@Brendon which one?" }, owner, "Brendon")).toBe(true);
+  expect(needsOwner({ text: "Waiting on Brendon" }, owner, "Brendon")).toBe(false);
+  expect(needsOwner({ text: "@Brendonx hi" }, owner, "Brendon")).toBe(false);
+  expect(needsOwner({ text: "Hi", mentions: ["c".repeat(64)] }, owner, undefined)).toBe(false);
 });

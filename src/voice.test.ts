@@ -7,6 +7,7 @@ import {
   parts,
   readSpoken,
   speakRequest,
+  spoken,
   toWav,
   Utterances,
 } from "./voice";
@@ -248,5 +249,114 @@ describe("speaking the agent's line", () => {
         "I hear you're describing how your core memory is structured.",
       ),
     ).toBeLessThan(0.8);
+  });
+});
+
+describe("a conversation", () => {
+  const abortable = () => {
+    const abort = new AbortController();
+    return {
+      abort,
+      seat: {
+        agent: { name: "Ada" },
+        conversation: { channelId: "room" },
+        signal: abort.signal,
+        output: vi.fn(async () => {}),
+        ended: vi.fn(),
+        thinking: vi.fn(),
+      },
+    };
+  };
+  const auth = async () =>
+    new TextEncoder().encode(JSON.stringify({ openrouter: { key: "sk-or-1" } }));
+  /** Speaks every line back faithfully, as `seconds` of silence. */
+  const faithful = (seconds = 0.1) =>
+    vi.fn(async ({ body }: { body: string }) => {
+      const sent = JSON.parse(body);
+      if (!sent.stream)
+        return { status: 200, headers: {}, body: JSON.stringify({ choices: [{ message: { content: "Hi Ada" } }] }) };
+      const line = /<line>\n([\s\S]*)\n<\/line>/.exec(sent.messages[0].content)?.[1] ?? "";
+      const pcm = new Uint8Array(Math.round(24_000 * 2 * seconds));
+      let binary = "";
+      for (let i = 0; i < pcm.length; i += 0x8000) binary += String.fromCharCode(...pcm.subarray(i, i + 0x8000));
+      return {
+        status: 200,
+        headers: {},
+        body: `data: ${JSON.stringify({ choices: [{ delta: { audio: { data: btoa(binary), transcript: line } } }] })}\ndata: [DONE]\n`,
+      };
+    });
+  const lines = (request: ReturnType<typeof faithful>) =>
+    request.mock.calls
+      .map((call) => JSON.parse(call[0].body))
+      .filter((body) => body.stream)
+      .map((body) => /<line>\n([\s\S]*)\n<\/line>/.exec(body.messages[0].content)?.[1]);
+  const speakTo = (connection: { input(f: number[]): void }) => {
+    feed(connection, tone(0.2, 0));
+    feed(connection, tone(1, 0.3));
+    feed(connection, tone(1, 0));
+  };
+
+  it("stops talking when the owner talks over it, and answers them", async () => {
+    const { seat, abort } = abortable();
+    const request = faithful(3);
+    const think = vi.fn(async () => "This answer takes three seconds to say.");
+    const connection = await openVoice(seat as never, { readFile: auth, request } as never, think, vi.fn(async () => {}));
+    speakTo(connection);
+    await vi.waitFor(() => expect(seat.output.mock.calls.length).toBeGreaterThan(10), { timeout: 3000 });
+    speakTo(connection);
+    await vi.waitFor(() => expect(think).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    // 3 s is 150 frames: cut off, the first answer stopped well short of it.
+    expect(seat.output.mock.calls.length).toBeLessThan(100);
+    abort.abort();
+    connection.close();
+  });
+
+  it("hears the owner while it works, and answers that next", async () => {
+    const { seat, abort } = abortable();
+    const request = faithful();
+    let release!: () => void;
+    const think = vi
+      .fn<(heard: string) => Promise<string>>()
+      .mockImplementationOnce(() => new Promise<string>((done) => (release = () => done("First."))))
+      .mockImplementation(async () => "Second.");
+    const connection = await openVoice(seat as never, { readFile: auth, request } as never, think, vi.fn(async () => {}));
+    speakTo(connection);
+    await vi.waitFor(() => expect(think).toHaveBeenCalledTimes(1));
+    speakTo(connection);
+    release();
+    await vi.waitFor(() => expect(think).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await vi.waitFor(() => expect(lines(request)).toEqual(["First.", "Second."]), { timeout: 3000 });
+    abort.abort();
+    connection.close();
+  });
+
+  it("says it's on it when a turn runs long", async () => {
+    const { seat, abort } = abortable();
+    const request = faithful();
+    const think = vi.fn(() => new Promise<string>((done) => setTimeout(() => done("Done."), 2200)));
+    const connection = await openVoice(seat as never, { readFile: auth, request } as never, think, vi.fn(async () => {}));
+    speakTo(connection);
+    await vi.waitFor(() => expect(lines(request)).toEqual(["On it.", "Done."]), { timeout: 5000 });
+    abort.abort();
+    connection.close();
+  });
+
+  it("says aloud what the agent posts for its owner, without markdown", async () => {
+    const { seat, abort } = abortable();
+    const request = faithful();
+    const connection = await openVoice(seat as never, { readFile: auth, request } as never, vi.fn(), vi.fn(async () => {}));
+    connection.announce("In builds: @Brendon can you check [the PR](https://github.com/x/y/pull/1)?");
+    await vi.waitFor(() => expect(lines(request)).toEqual(["In builds: Brendon can you check the PR?"]));
+    await vi.waitFor(() => expect(seat.output).toHaveBeenCalled());
+    abort.abort();
+    connection.close();
+  });
+});
+
+describe("spoken", () => {
+  it("drops markdown, links and code, and reads mentions as names", () => {
+    expect(spoken("**Hi @Brendon**\n\n- See https://x.y/z\n- Run `npm test`\n```sh\nrm -rf /\n```")).toBe(
+      "Hi Brendon\nSee a link\nRun npm test",
+    );
   });
 });

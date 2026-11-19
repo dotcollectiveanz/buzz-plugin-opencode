@@ -113,13 +113,27 @@ export function apply(ctx: Context) {
     // room's OpenCode session (src/voice.ts).
     ...(desktop
       ? {
-          voice: (seat) =>
-            openVoice(
+          voice: async (seat) => {
+            const connection = await openVoice(
               seat,
               host,
               (heard) => runtime.voiceTurn(seat, heard),
               (speaker, text) => runtime.voicePost(seat, speaker, text),
-            ),
+            );
+            // While seated, what the agent posts for its owner elsewhere is
+            // said aloud too.
+            const off = runtime.onOwnerNeeded(seat.agent.key, (text) =>
+              connection.announce(text),
+            );
+            seat.signal.addEventListener("abort", off, { once: true });
+            return {
+              input: (samples) => connection.input(samples),
+              close: () => {
+                off();
+                return connection.close();
+              },
+            };
+          },
         }
       : {}),
     run: (delivery) => runtime.run(delivery),

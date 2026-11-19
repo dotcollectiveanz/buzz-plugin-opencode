@@ -3,7 +3,10 @@
 // transcribed by an audio-input model, run as a turn in the agent's OpenCode
 // session for the room (with its tools), and its final message read aloud by
 // an audio-output model, word for word as the agent's own line: first
-// sentence first, so it starts talking while the rest is voiced. Both sides are
+// sentence first, so it starts talking while the rest is voiced. The owner is
+// heard throughout: talking over the agent cuts it off, and what they say
+// while it works is answered next. A turn that runs long gets a quick "On it",
+// and what the agent posts for its owner elsewhere is said aloud too. Both sides are
 // posted in the room as plain messages from the agent. The key is OpenCode's
 // own OpenRouter login, read where `opencode auth login` keeps it.
 import type { AgentType, Host } from "./buzz";
@@ -38,6 +41,11 @@ const END_SILENCE_MS = 700;
 const MIN_SPEECH_MS = 300;
 const MAX_SPEECH_MS = 30_000;
 const LEAD_FRAMES = 3;
+/** How long the owner must talk over the agent to cut it off. */
+const BARGE_MS = 250;
+/** How long a turn may run before the agent says it's on it. */
+const ACK_MS = 1500;
+const ACK_LINE = "On it.";
 
 /** The OpenRouter key OpenCode signed in with, or undefined without one. */
 export async function openRouterKey(
@@ -210,7 +218,9 @@ export function parts(text: string): string[] {
   return out;
 }
 
-/** Cuts the owner's audio into utterances by loudness against a tracked floor. */
+/** Cuts the owner's audio into utterances by loudness against a tracked floor.
+ * `strict` asks for louder speech, as while the agent talks; `started` is
+ * called once an utterance has been voiced for `BARGE_MS`. */
 export class Utterances {
   private pre: Float32Array[] = [];
   private preLength = 0;
@@ -219,14 +229,20 @@ export class Utterances {
   private quiet = 0;
   private voiced = 0;
   private floor = 0.005;
-  constructor(private readonly done: (samples: Float32Array) => void) {}
-  push(input: readonly number[]) {
+  private announced = false;
+  constructor(
+    private readonly done: (samples: Float32Array) => void,
+    private readonly started?: () => void,
+  ) {}
+  push(input: ArrayLike<number>, strict = false) {
     const frame = Float32Array.from(input);
     if (!frame.length) return;
     let sum = 0;
     for (const s of frame) sum += s * s;
     const rms = Math.sqrt(sum / frame.length);
-    const loud = rms > Math.max(0.015, this.floor * 3);
+    const loud = strict
+      ? rms > Math.max(0.04, this.floor * 5)
+      : rms > Math.max(0.015, this.floor * 3);
     if (!this.speechLength) {
       if (!loud) {
         this.floor = this.floor * 0.95 + rms * 0.05;
@@ -245,13 +261,17 @@ export class Utterances {
     this.speechLength += frame.length;
     this.quiet = loud ? 0 : this.quiet + frame.length;
     if (loud) this.voiced += frame.length;
+    if (!this.announced && this.voiced >= (RATE * BARGE_MS) / 1000) {
+      this.announced = true;
+      this.started?.();
+    }
     if (
       this.quiet >= (RATE * END_SILENCE_MS) / 1000 ||
       this.speechLength >= (RATE * MAX_SPEECH_MS) / 1000
     )
       this.flush();
   }
-  /** Drops what was heard so far, such as the agent's own voice. */
+  /** Drops what was heard so far. */
   reset() {
     this.pre = [];
     this.preLength = 0;
@@ -259,6 +279,7 @@ export class Utterances {
     this.speechLength = 0;
     this.quiet = 0;
     this.voiced = 0;
+    this.announced = false;
   }
   private flush() {
     const spoken = this.voiced;
@@ -273,6 +294,23 @@ export class Utterances {
   }
 }
 
+/** A message the agent posted, as something to say aloud: no markdown, links
+ * or code, and mentions as plain names. */
+export function spoken(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, "a link")
+    .replace(/nostr:\S+/g, "")
+    .replace(/(^|\s)@(\S)/g, "$1$2")
+    .replace(/^\s*(#+|>|[-*+]|\d+\.)\s+/gm, "")
+    .replace(/[*_~]+/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
 /** Runs what the owner said as a turn, posts the answer in the room, and
  * gives it back to say. Leaving the Huddle doesn't stop the work. */
 export type Think = (heard: string) => Promise<string>;
@@ -285,7 +323,7 @@ export async function openVoice(
   host: Host,
   think: Think,
   post: Post,
-): Promise<Connection> {
+): Promise<Connection & { announce(text: string): void }> {
   seat.signal.throwIfAborted();
   if (seat.agent.protection)
     throw new Error("Voice is unavailable for protected agents");
@@ -299,7 +337,10 @@ export async function openVoice(
 
   let busy = false;
   let closed = false;
-  const queue: Float32Array[] = [];
+  let playing = false;
+  /** The owner talked over the agent: stop what it's saying. */
+  let cut = false;
+  const queue: ({ heard: Float32Array } | { say: string })[] = [];
 
   const send = async (body: unknown) => {
     const response = await host.request({
@@ -364,17 +405,58 @@ export async function openVoice(
   };
 
   const play = async (samples: Float32Array) => {
-    const start = performance.now();
-    for (let i = 0, n = 0; i < samples.length; i += FRAME, n++) {
-      if (closed) return;
-      const frame = new Array<number>(FRAME).fill(0);
-      for (let j = 0; j < FRAME && i + j < samples.length; j++)
-        frame[j] = Math.max(-1, Math.min(1, samples[i + j] || 0));
-      await seat.output(frame);
-      // Stay a few frames ahead of real time; the seat drops frames past 5.
-      const wait = start + (n - LEAD_FRAMES) * 20 - performance.now();
-      if (wait > 0) await new Promise((done) => setTimeout(done, wait));
+    playing = true;
+    try {
+      const start = performance.now();
+      for (let i = 0, n = 0; i < samples.length; i += FRAME, n++) {
+        if (closed || cut) return;
+        const frame = new Array<number>(FRAME).fill(0);
+        for (let j = 0; j < FRAME && i + j < samples.length; j++)
+          frame[j] = Math.max(-1, Math.min(1, samples[i + j] || 0));
+        await seat.output(frame);
+        // Stay a few frames ahead of real time; the seat drops frames past 5.
+        const wait = start + (n - LEAD_FRAMES) * 20 - performance.now();
+        if (wait > 0) await new Promise((done) => setTimeout(done, wait));
+      }
+    } finally {
+      playing = false;
     }
+  };
+
+  /** Says `text`: each piece is voiced while the one before it plays, at
+   * most two ahead. A piece the voice won't say faithfully is left out, and
+   * the owner talking over it stops the rest. */
+  const sayAloud = async (text: string) => {
+    const pieces = parts(text);
+    const voiced: (ReturnType<typeof speak> | undefined)[] = [];
+    const ahead = (i: number) => {
+      const line = pieces[i];
+      if (line === undefined || voiced[i] || closed || cut) return;
+      const piece = speak(line);
+      piece.catch(() => {}); // Seen when awaited, or not at all once closed.
+      voiced[i] = piece;
+    };
+    ahead(0);
+    ahead(1);
+    for (let i = 0; i < pieces.length; i++) {
+      const spoken = await voiced[i];
+      ahead(i + 2);
+      if (closed || cut) return;
+      if (!spoken) continue;
+      seat.thinking?.(false);
+      await play(fromPcm16(spoken.pcm));
+    }
+  };
+
+  // "On it.", voiced the first time a turn runs long, then kept.
+  let ack: ReturnType<typeof speak> | undefined;
+  const acknowledge = async (done: () => boolean) => {
+    ack ??= speak(ACK_LINE).catch(() => undefined);
+    const spoken = await ack;
+    if (!spoken || done() || closed || cut) return;
+    seat.thinking?.(false);
+    await play(fromPcm16(spoken.pcm));
+    if (!done()) seat.thinking?.(true);
   };
 
   const say = (speaker: "owner" | "agent", text: string) =>
@@ -388,29 +470,22 @@ export async function openVoice(
       const heard = await listen(samples);
       if (closed || !heard) return;
       await say("owner", heard);
-      const reply = await think(heard);
-      if (closed) return;
-      // Each piece is voiced while the one before it plays, at most two
-      // ahead. A piece the voice won't say faithfully is left out.
-      const pieces = parts(reply);
-      const voiced: (ReturnType<typeof speak> | undefined)[] = [];
-      const ahead = (i: number) => {
-        const line = pieces[i];
-        if (line === undefined || voiced[i] || closed) return;
-        const piece = speak(line);
-        piece.catch(() => {}); // Seen when awaited, or not at all once closed.
-        voiced[i] = piece;
-      };
-      ahead(0);
-      ahead(1);
-      for (let i = 0; i < pieces.length; i++) {
-        const spoken = await voiced[i];
-        ahead(i + 2);
-        if (closed) return;
-        if (!spoken) continue;
-        seat.thinking?.(false);
-        await play(fromPcm16(spoken.pcm));
+      let finished = false;
+      let acking: Promise<void> | undefined;
+      const timer = setTimeout(() => {
+        acking = acknowledge(() => finished);
+      }, ACK_MS);
+      let reply: string;
+      try {
+        reply = await think(heard);
+      } finally {
+        finished = true;
+        clearTimeout(timer);
       }
+      await acking;
+      if (closed) return;
+      cut = false;
+      await sayAloud(reply);
     } catch (error) {
       if (closed) return;
       const reason = error instanceof Error ? error.message : String(error);
@@ -425,19 +500,30 @@ export async function openVoice(
     if (busy) return;
     busy = true;
     try {
-      for (let next = queue.shift(); next && !closed; next = queue.shift())
-        await answer(next);
+      for (let next = queue.shift(); next && !closed; next = queue.shift()) {
+        cut = false;
+        if ("heard" in next) await answer(next.heard);
+        else
+          await sayAloud(next.say).catch((error) =>
+            console.warn("opencode voice could not say", error),
+          );
+      }
     } finally {
       busy = false;
-      // What the mic heard while the agent spoke is mostly the agent.
-      utterances.reset();
     }
   };
 
-  const utterances = new Utterances((samples) => {
-    queue.push(samples);
-    void drain();
-  });
+  // The owner is heard all the time: while the agent works, what they say is
+  // answered next; while it speaks, talking over it cuts it off.
+  const utterances = new Utterances(
+    (samples) => {
+      queue.push({ heard: samples });
+      void drain();
+    },
+    () => {
+      if (playing) cut = true;
+    },
+  );
 
   const close = () => {
     closed = true;
@@ -448,9 +534,15 @@ export async function openVoice(
 
   return {
     input(samples) {
-      if (closed || busy) return;
-      utterances.push(samples);
+      if (closed) return;
+      utterances.push(samples, playing);
     },
     close,
+    announce(text) {
+      const line = spoken(text);
+      if (closed || !line) return;
+      queue.push({ say: line });
+      void drain();
+    },
   };
 }

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.0 (2026-11-19)
+
+- **Talk over the agent:** it now hears you while it speaks. Talk over it for a moment and it stops,
+  then answers what you said. Speakers can still set it off, so headphones work best.
+- **It keeps listening while it works:** what you say during a turn is answered next, instead of
+  being ignored.
+- **"On it":** when a turn runs longer than a second and a half, the agent says so, then gives its
+  answer when it's done.
+- **It speaks up when it needs you:** while you're in a Huddle with the agent, any message it posts
+  elsewhere that tags you is read aloud too, with where it was posted.
+
 ## 1.2.3 (2026-11-19)
 
 - **The voice starts sooner:** the agent's answer was voiced in one go, so nothing played until the
