@@ -2,8 +2,9 @@
 // audio, so a seat is a loop: the owner's speech is cut into utterances,
 // transcribed by an audio-input model, run as a turn in the agent's OpenCode
 // session for the room (with its tools), and its final message read aloud by
-// an audio-output model. The key is OpenCode's own OpenRouter login, read
-// where `opencode auth login` keeps it.
+// an audio-output model, word for word as the agent's own line. Both sides are
+// posted in the room as plain messages from the agent. The key is OpenCode's
+// own OpenRouter login, read where `opencode auth login` keeps it.
 import type { AgentType, Host } from "./buzz";
 import type { Config } from "./settings";
 
@@ -20,6 +21,8 @@ export const LISTEN_MODEL = "google/gemini-2.5-flash";
 export const SPEAK_MODEL = "openai/gpt-audio-mini";
 const SPEAK_VOICE = "alloy";
 const NO_SPEECH = "NONE";
+/** How much of the line the voice must have said for it to be played. */
+const FAITHFUL = 0.8;
 
 const RATE = 48_000;
 const FRAME = 960; // 20 ms, what the seat's output takes.
@@ -133,6 +136,53 @@ export function readSpoken(body: string) {
   };
 }
 
+function words(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[^a-z0-9' ]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** How closely `said` matches `line`, from 0 to 1: the share of words they
+ * have in common, against the longer of the two. */
+export function likeness(line: string, said: string) {
+  const want = words(line);
+  const got = words(said);
+  if (!want.length || !got.length) return want.length === got.length ? 1 : 0;
+  const left = new Map<string, number>();
+  for (const w of got) left.set(w, (left.get(w) ?? 0) + 1);
+  let shared = 0;
+  for (const w of want) {
+    const n = left.get(w) ?? 0;
+    if (n) {
+      shared++;
+      left.set(w, n - 1);
+    }
+  }
+  return shared / Math.max(want.length, got.length);
+}
+
+/** The request that has the audio model perform `line` as the agent's own
+ * words. The line sits in the system prompt, not a user turn, so the model
+ * has nothing to answer: given it as a message, it replied to it instead. */
+export function speakRequest(line: string) {
+  return {
+    model: SPEAK_MODEL,
+    messages: [
+      {
+        role: "system",
+        content: `You are a voice actor recording one line for an AI assistant, in the assistant's own first-person voice. Your line, word for word:\n\n${line}\n\nWhen the director says "Action", perform exactly that line and nothing else: no reply, no comment, no changes.`,
+      },
+      { role: "user", content: "Action" },
+    ],
+    modalities: ["text", "audio"],
+    audio: { voice: SPEAK_VOICE, format: "pcm16" },
+    stream: true,
+  };
+}
+
 /** Cuts the owner's audio into utterances by loudness against a tracked floor. */
 export class Utterances {
   private pre: Float32Array[] = [];
@@ -196,16 +246,18 @@ export class Utterances {
   }
 }
 
-/** Runs what the owner said as a turn, and gives back what to say. Leaving
- * the Huddle doesn't stop the work; `listening` says whether anyone will hear
- * the answer. */
-export type Think = (heard: string, listening: () => boolean) => Promise<string>;
+/** Runs what the owner said as a turn, posts the answer in the room, and
+ * gives it back to say. Leaving the Huddle doesn't stop the work. */
+export type Think = (heard: string) => Promise<string>;
+/** Posts a line of the Huddle in the room. */
+export type Post = (speaker: "owner" | "agent", text: string) => Promise<void>;
 
 /** Opens a Huddle seat for an OpenCode agent. */
 export async function openVoice(
   seat: Seat,
   host: Host,
   think: Think,
+  post: Post,
 ): Promise<Connection> {
   seat.signal.throwIfAborted();
   if (seat.agent.protection)
@@ -222,7 +274,7 @@ export async function openVoice(
   let closed = false;
   const queue: Float32Array[] = [];
 
-  const post = async (body: unknown) => {
+  const send = async (body: unknown) => {
     const response = await host.request({
       url: COMPLETIONS,
       method: "POST",
@@ -247,7 +299,7 @@ export async function openVoice(
   };
 
   const listen = async (samples: Float32Array) => {
-    const body = await post({
+    const body = await send({
       model: LISTEN_MODEL,
       messages: [
         {
@@ -272,23 +324,16 @@ export async function openVoice(
   };
 
   const speak = async (text: string) => {
-    const body = await post({
-      model: SPEAK_MODEL,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a text-to-speech voice. Read the user's message aloud exactly as written, in a natural, friendly tone. Add nothing, answer nothing, and leave nothing out.",
-        },
-        { role: "user", content: text },
-      ],
-      modalities: ["text", "audio"],
-      audio: { voice: SPEAK_VOICE, format: "pcm16" },
-      stream: true,
-    });
-    const spoken = readSpoken(body);
-    if (spoken.error) throw new Error(spoken.error);
-    return spoken;
+    // The voice is a chat model, so it can still answer the line instead of
+    // saying it: check what it said, try once more, and stay quiet rather
+    // than speak words that aren't the agent's. The text is posted either way.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const spoken = readSpoken(await send(speakRequest(text)));
+      if (spoken.error) throw new Error(spoken.error);
+      if (likeness(text, spoken.transcript) >= FAITHFUL) return spoken;
+      console.warn("opencode voice changed the line", spoken.transcript);
+    }
+    return undefined;
   };
 
   const play = async (samples: Float32Array) => {
@@ -306,8 +351,8 @@ export async function openVoice(
   };
 
   const say = (speaker: "owner" | "agent", text: string) =>
-    seat.transcript(speaker, text).catch((error) => {
-      if (!closed) console.warn("opencode voice transcript failed", error);
+    post(speaker, text).catch((error) => {
+      if (!closed) console.warn("opencode voice could not post", error);
     });
 
   const answer = async (samples: Float32Array) => {
@@ -315,12 +360,11 @@ export async function openVoice(
     try {
       const heard = await listen(samples);
       if (closed || !heard) return;
-      void say("owner", heard);
-      const reply = await think(heard, () => !closed);
+      await say("owner", heard);
+      const reply = await think(heard);
       if (closed) return;
-      void say("agent", reply);
       const spoken = await speak(reply);
-      if (closed) return;
+      if (closed || !spoken) return;
       seat.thinking?.(false);
       await play(fromPcm16(spoken.pcm));
     } catch (error) {

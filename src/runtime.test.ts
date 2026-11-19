@@ -219,7 +219,7 @@ it("runs Huddle speech in the room's session, with its tools, and returns what t
     config: DEFAULT_CONFIG,
     team: "",
   };
-  const said = await oc.voiceTurn(seat as never, "What's the weather?", () => true);
+  const said = await oc.voiceTurn(seat as never, "What's the weather?");
   expect(said).toBe("It's sunny in Melbourne.");
   expect(buzz.harness.conversation).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -242,16 +242,30 @@ it("runs Huddle speech in the room's session, with its tools, and returns what t
   );
   const prompt = opencode.received.find((m) => m.method === "session/prompt");
   expect(JSON.stringify(prompt?.params)).toContain("What's the weather?");
-  expect(buzz.harness.reply).not.toHaveBeenCalled();
-  expect(oc.conversations(AGENT).map((c) => c.key)).toEqual([CHANNEL]);
-
-  // Nobody left to hear it: the answer is posted instead.
-  await oc.voiceTurn(seat as never, "And tomorrow?", () => false);
+  // The answer is posted as the agent's own message, with no label.
   expect(buzz.harness.reply).toHaveBeenCalledWith(
     expect.objectContaining({ key: AGENT }),
     room,
     "It's sunny in Melbourne.",
   );
+  expect(oc.conversations(AGENT).map((c) => c.key)).toEqual([CHANNEL]);
+  oc.dispose();
+});
+
+it("posts the owner's speech in the room under their name, as a plain message", async () => {
+  const buzz = fakeBuzz();
+  const room = Object.freeze({ key: CHANNEL, channel: CHANNEL, topLevel: true, where: "DM" });
+  buzz.harness.conversation.mockImplementation((async () => room) as never);
+  const oc = runtime(buzz, fakeOpencode(() => ({ stopReason: "end_turn" }), "unused").spawn);
+  const seat = {
+    agent: { key: AGENT, name: "Ada", owner: "f".repeat(64), config: DEFAULT_CONFIG },
+    conversation: { channelId: CHANNEL },
+  };
+  await oc.voicePost(seat as never, "owner", "Can you hear me?");
+  await oc.voicePost(seat as never, "agent", "Yes, clearly.");
+  const lines = buzz.harness.reply.mock.calls.map((call) => (call as unknown[])[2]);
+  expect(lines).toEqual(["Owner: Can you hear me?", "Yes, clearly."]);
+  expect(lines.join()).not.toContain("transcribed");
   oc.dispose();
 });
 
@@ -263,7 +277,7 @@ it("says why when Buzz won't admit the Huddle's conversation", async () => {
     agent: { key: AGENT, name: "Ada", config: DEFAULT_CONFIG },
     conversation: { channelId: CHANNEL },
   };
-  await expect(oc.voiceTurn(seat as never, "Hello?", () => true)).rejects.toThrow(/did not admit/);
+  await expect(oc.voiceTurn(seat as never, "Hello?")).rejects.toThrow(/did not admit/);
   expect(buzz.harness.tools).not.toHaveBeenCalled();
   oc.dispose();
 });

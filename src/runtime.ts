@@ -41,6 +41,13 @@ const TITLE_LIMIT = 80;
 /** The plugin id (plugin/manifest.json) a Huddle's speech is admitted under. */
 const VOICE_PLUGIN = "opencode-harness";
 
+type VoiceSeat = Readonly<{
+  agent: Agent;
+  conversation: Readonly<{ channelId: string }>;
+  config?: unknown;
+  team?: string;
+}>;
+
 type HarnessPrompt = Awaited<
   ReturnType<Agents["harness"]["turnPrompt"]>
 >;
@@ -472,20 +479,10 @@ export class OpenCodeRuntime {
       .catch((error) => console.warn("opencode handover failed", error));
   }
 
-  /** Runs what the owner said in a Huddle as a turn in the room's session,
-   * with its tools, and gives back the final message to say aloud, or posts
-   * it once nobody is `listening`. Speech is not a message, so the session's
-   * cursor stays where text left it. */
-  async voiceTurn(
-    seat: Readonly<{
-      agent: Agent;
-      conversation: Readonly<{ channelId: string }>;
-      config?: unknown;
-      team?: string;
-    }>,
-    heard: string,
-    listening: () => boolean,
-  ): Promise<string> {
+  /** The Huddle's room as a conversation the kit admitted: its tools and
+   * replies take no other. Speech is admitted as this plugin's own wake in the
+   * room, at its top level; the wake is local and never published. */
+  private async voiceRoom(seat: VoiceSeat, heard: string) {
     const agent = this.buzz.handle(seat.agent.key);
     if (!agent) throw new Error("The agent isn't running here");
     const settings = config(seat.config ?? seat.agent.config);
@@ -501,9 +498,6 @@ export class OpenCodeRuntime {
         : label?.name
           ? `#${label.name}`
           : channelId.slice(0, 8);
-    // The kit's tools and replies take only a conversation it admitted, so
-    // the Huddle's speech is admitted as this plugin's own wake in the room,
-    // at its top level. The wake is local and never published.
     const at = Date.now();
     const conversation = await this.kit.conversation(
       {
@@ -527,6 +521,32 @@ export class OpenCodeRuntime {
     );
     if (!conversation)
       throw new Error("Buzz did not admit this Huddle's conversation");
+    return { agent, entry, where, conversation };
+  }
+
+  /** Posts a line of the Huddle in the room as the agent's own message: the
+   * owner's speech under their name, the agent's words as they are. */
+  async voicePost(seat: VoiceSeat, speaker: "owner" | "agent", text: string) {
+    const { agent, conversation } = await this.voiceRoom(seat, text);
+    const owner = seat.agent.owner;
+    const name = (owner && this.name(agent.key, owner)) || "Owner";
+    await this.kit.reply(
+      agent,
+      conversation,
+      speaker === "owner" ? `${name}: ${text}` : text,
+    );
+  }
+
+  /** Runs what the owner said in a Huddle as a turn in the room's session,
+   * with its tools, posts its final message in the room as the agent's own,
+   * and gives it back to say aloud. Speech is not a message, so the session's
+   * cursor stays where text left it. */
+  async voiceTurn(seat: VoiceSeat, heard: string): Promise<string> {
+    const { agent, entry, where, conversation } = await this.voiceRoom(
+      seat,
+      heard,
+    );
+    const channelId = seat.conversation.channelId;
     const { key } = conversation;
     const prior = entry.policies.get(key);
     let interrupted = false;
@@ -566,8 +586,7 @@ export class OpenCodeRuntime {
     const text =
       result.text?.trim() ||
       (result.answered ? "Done. I've posted it in the chat." : "Done.");
-    // Left the call while it worked: the answer goes where they'll read it.
-    if (!listening() && result.text?.trim())
+    if (result.text?.trim())
       await this.kit
         .reply(agent, conversation, text)
         .catch((error) => console.warn("opencode could not post", error));
