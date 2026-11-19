@@ -64,17 +64,32 @@ export async function openRouterKey(
   return undefined;
 }
 
-function base64(bytes: Uint8Array) {
+export function base64(bytes: Uint8Array) {
   let binary = "";
   for (let i = 0; i < bytes.length; i += 0x8000)
     binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(binary);
 }
-function unbase64(text: string) {
+export function unbase64(text: string) {
   const binary = atob(text);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+/** 48 kHz float samples as 16 kHz 16-bit little-endian mono PCM. */
+export function toPcm16(samples: Float32Array): Uint8Array {
+  const step = RATE / LISTEN_RATE;
+  const count = Math.floor(samples.length / step);
+  const out = new Uint8Array(count * 2);
+  const view = new DataView(out.buffer);
+  for (let i = 0; i < count; i++) {
+    let sum = 0;
+    for (let j = 0; j < step; j++) sum += samples[i * step + j] ?? 0;
+    const s = Math.max(-1, Math.min(1, sum / step));
+    view.setInt16(i * 2, Math.round(s * 0x7fff), true);
+  }
+  return out;
 }
 
 /** 48 kHz float samples as a 16 kHz 16-bit mono WAV. */

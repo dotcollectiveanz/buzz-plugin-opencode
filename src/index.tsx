@@ -19,6 +19,7 @@ import {
   withSyncedSettings,
 } from "./settings";
 import { createTabs } from "./tabs";
+import { geminiKey, openLiveVoice } from "./live";
 import { openVoice } from "./voice";
 
 export const TYPE_ID = "opencode";
@@ -109,17 +110,21 @@ export function apply(ctx: Context) {
       run: (agent, place, action) => runtime.session(agent, place, action),
       subscribe: (listener) => runtime.subscribe(listener),
     },
-    // Huddle voice: speech in and out through OpenRouter, the work in the
+    // Huddle voice: speech in and out through Gemini Live or OpenRouter, the work in the
     // room's OpenCode session (src/voice.ts).
     ...(desktop
       ? {
           voice: async (seat) => {
-            const connection = await openVoice(
-              seat,
-              host,
-              (heard) => runtime.voiceTurn(seat, heard),
-              (speaker, text) => runtime.voicePost(seat, speaker, text),
-            );
+            const think = (heard: string) => runtime.voiceTurn(seat, heard);
+            const post = (speaker: "owner" | "agent", text: string) =>
+              runtime.voicePost(seat, speaker, text);
+            // Gemini Live when there's a Gemini key; otherwise OpenRouter.
+            const gemini = host.readFile
+              ? await geminiKey(host.readFile.bind(host))
+              : undefined;
+            const connection = gemini
+              ? await openLiveVoice(seat, gemini, think, post)
+              : await openVoice(seat, host, think, post);
             // While seated, what the agent posts for its owner elsewhere is
             // said aloud too.
             const off = runtime.onOwnerNeeded(seat.agent.key, (text) =>

@@ -19,7 +19,7 @@ check("manifest description is 1-280 bytes", desc >= 1 && desc <= 280, `${desc} 
 const processes = (manifest.host?.processes ?? []).map((p) => `${p.id}=${p.program} ${(p.args ?? []).join(" ")}`);
 check("manifest declares opencode acp and session export", processes.join(",") === "opencode=opencode acp,export=opencode session export", processes.join(","));
 check("manifest asks for MCP and files", manifest.host?.mcp === true && manifest.host?.files === true);
-check("manifest reaches only OpenRouter, for voice", JSON.stringify(manifest.host?.networkOrigins) === '["https://openrouter.ai"]', JSON.stringify(manifest.host?.networkOrigins));
+check("manifest reaches only OpenRouter and Gemini, for voice", JSON.stringify(manifest.host?.networkOrigins) === '["https://openrouter.ai","https://generativelanguage.googleapis.com"]', JSON.stringify(manifest.host?.networkOrigins));
 
 // Buzz rejects the folder if the icon breaks its limits: PNG, at most 1 MiB,
 // 4096 px a side and 1,048,576 px in all.
