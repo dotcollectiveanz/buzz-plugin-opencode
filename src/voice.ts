@@ -2,7 +2,8 @@
 // audio, so a seat is a loop: the owner's speech is cut into utterances,
 // transcribed by an audio-input model, run as a turn in the agent's OpenCode
 // session for the room (with its tools), and its final message read aloud by
-// an audio-output model, word for word as the agent's own line. Both sides are
+// an audio-output model, word for word as the agent's own line: first
+// sentence first, so it starts talking while the rest is voiced. Both sides are
 // posted in the room as plain messages from the agent. The key is OpenCode's
 // own OpenRouter login, read where `opencode auth login` keeps it.
 import type { AgentType, Host } from "./buzz";
@@ -23,6 +24,10 @@ const SPEAK_VOICE = "alloy";
 const NO_SPEECH = "NONE";
 /** How much of the line the voice must have said for it to be played. */
 const FAITHFUL = 0.8;
+/** A piece shorter than this takes the next sentence with it. */
+const MIN_PART = 20;
+/** The most characters of sentences grouped into one piece after the first. */
+const PART = 240;
 
 const RATE = 48_000;
 const FRAME = 960; // 20 ms, what the seat's output takes.
@@ -173,7 +178,7 @@ export function speakRequest(line: string) {
     messages: [
       {
         role: "system",
-        content: `You are a voice actor recording one line for an AI assistant, in the assistant's own first-person voice. Your line, word for word:\n\n${line}\n\nWhen the director says "Action", perform exactly that line and nothing else: no reply, no comment, no changes.`,
+        content: `You are a voice actor recording one line for an AI assistant, in the assistant's own first-person voice. Your line, word for word, is everything between the markers:\n\n<line>\n${line}\n</line>\n\nEvery word between the markers is spoken, even a lead-in such as "First, who I am:". When the director says "Action", perform exactly that line and nothing else: no reply, no comment, no changes.`,
       },
       { role: "user", content: "Action" },
     ],
@@ -181,6 +186,28 @@ export function speakRequest(line: string) {
     audio: { voice: SPEAK_VOICE, format: "pcm16" },
     stream: true,
   };
+}
+
+/** The answer in the pieces it is voiced in, in order: its first sentence on
+ * its own, so speech starts as soon as that is ready, then the rest in
+ * sentences grouped up to `PART` characters, voiced while earlier ones play. */
+export function parts(text: string): string[] {
+  const sentences = text
+    .split(/\n+|(?<=[.!?…])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const out: string[] = [];
+  for (const sentence of sentences) {
+    const last = out.at(-1);
+    if (
+      last !== undefined &&
+      (last.length < MIN_PART ||
+        (out.length > 1 && last.length + sentence.length < PART))
+    )
+      out[out.length - 1] = `${last} ${sentence}`;
+    else out.push(sentence);
+  }
+  return out;
 }
 
 /** Cuts the owner's audio into utterances by loudness against a tracked floor. */
@@ -363,10 +390,27 @@ export async function openVoice(
       await say("owner", heard);
       const reply = await think(heard);
       if (closed) return;
-      const spoken = await speak(reply);
-      if (closed || !spoken) return;
-      seat.thinking?.(false);
-      await play(fromPcm16(spoken.pcm));
+      // Each piece is voiced while the one before it plays, at most two
+      // ahead. A piece the voice won't say faithfully is left out.
+      const pieces = parts(reply);
+      const voiced: (ReturnType<typeof speak> | undefined)[] = [];
+      const ahead = (i: number) => {
+        const line = pieces[i];
+        if (line === undefined || voiced[i] || closed) return;
+        const piece = speak(line);
+        piece.catch(() => {}); // Seen when awaited, or not at all once closed.
+        voiced[i] = piece;
+      };
+      ahead(0);
+      ahead(1);
+      for (let i = 0; i < pieces.length; i++) {
+        const spoken = await voiced[i];
+        ahead(i + 2);
+        if (closed) return;
+        if (!spoken) continue;
+        seat.thinking?.(false);
+        await play(fromPcm16(spoken.pcm));
+      }
     } catch (error) {
       if (closed) return;
       const reason = error instanceof Error ? error.message : String(error);
