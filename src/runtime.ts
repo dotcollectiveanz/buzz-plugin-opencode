@@ -77,6 +77,7 @@ export function voicePrompt(where: string, heard: string) {
     "It is a request from your owner, as if they had typed it to you. Do any work it asks for with your tools, as for a message.",
     "Your final message is read aloud to them and posted in the Huddle as what you said: write it as a few short, plain spoken sentences, with no markdown, lists, code or links, and don't also post it with the Buzz send tool.",
     "Use send only for what they ask you to post, or for what needs writing down, such as links or long results; then say briefly that you posted it.",
+    "While they are in the Huddle, any message you post elsewhere that tags them is also read aloud to them, so tag them when you need them.",
   ].join("\n");
 }
 
@@ -146,8 +147,26 @@ type Entry = {
   >;
 };
 
+/** Whether a Buzz send asks for the owner: it tags them by pubkey or name. */
+export function needsOwner(
+  args: { text?: unknown; mentions?: unknown },
+  owner: string | undefined,
+  ownerName: string | undefined,
+) {
+  if (!owner || typeof args.text !== "string" || !args.text.trim()) return false;
+  const mentions = Array.isArray(args.mentions) ? args.mentions : [];
+  if (mentions.includes(owner)) return true;
+  if (!ownerName) return false;
+  const name = ownerName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|\\s)@${name}(?![\\w])`, "i").test(args.text);
+}
+
 export class OpenCodeRuntime {
   private readonly agents = new Map<string, Entry>();
+  /** Each agent's open Huddle seat, told what it posts for its owner. */
+  private readonly seats = new Map<string, (text: string) => void>();
+  /** Conversations running a Huddle turn, whose answer is already spoken. */
+  private readonly voicing = new Set<string>();
   private readonly opencode: SharedProcess;
   private readonly listeners = new Set<() => void>();
   private readonly views = new Map<
@@ -524,6 +543,54 @@ export class OpenCodeRuntime {
     return { agent, entry, where, conversation };
   }
 
+  /** While the agent has a Huddle seat open, says aloud what it posts for its
+   * owner elsewhere, such as a question or a blocker. Returns the undo. */
+  onOwnerNeeded(agent: string, speak: (text: string) => void) {
+    this.seats.set(agent, speak);
+    return () => {
+      if (this.seats.get(agent) === speak) this.seats.delete(agent);
+    };
+  }
+
+  private heardSend(
+    agent: string,
+    entry: Entry,
+    conversation: string | undefined,
+    message: unknown,
+    reply: unknown,
+  ) {
+    const speak = this.seats.get(agent);
+    if (!speak) return;
+    const call = message as {
+      method?: string;
+      params?: { name?: string; arguments?: Record<string, unknown> };
+    };
+    if (
+      call.method !== "tools/call" ||
+      (call.params?.name !== "send" &&
+        call.params?.name !== "reply_in_subthread")
+    )
+      return;
+    const result = reply as { error?: unknown; result?: { isError?: boolean } };
+    if (result?.error || result?.result?.isError) return;
+    if (conversation && this.voicing.has(conversation)) return;
+    const args = call.params.arguments ?? {};
+    const owner = entry.delivery?.agent.owner;
+    const ownerName = owner ? this.name(agent, owner) : undefined;
+    if (!needsOwner(args, owner, ownerName)) return;
+    const channel =
+      (typeof args.channel === "string" && args.channel) ||
+      conversation?.split("/")[0];
+    const label = channel ? this.channelLabel(agent, channel) : undefined;
+    const where =
+      label?.channelType === "dm"
+        ? "our DM"
+        : label?.name
+          ? label.name
+          : undefined;
+    speak(where ? `In ${where}: ${args.text}` : String(args.text));
+  }
+
   /** Posts a line of the Huddle in the room as the agent's own message: the
    * owner's speech under their name, the agent's words as they are. */
   async voicePost(seat: VoiceSeat, speaker: "owner" | "agent", text: string) {
@@ -581,7 +648,8 @@ export class OpenCodeRuntime {
       entry.policies.delete(key);
       this.notify();
     });
-    const result = await done;
+    this.voicing.add(key);
+    const result = await done.finally(() => this.voicing.delete(key));
     if (!result.ok) throw new Error(result.error ?? "The turn failed");
     const text =
       result.text?.trim() ||
@@ -675,7 +743,9 @@ export class OpenCodeRuntime {
           id: message.id,
           error: { code: -32603, message: "No Buzz turn is running here" },
         };
-      return handler(message as Parameters<McpHandler>[0]);
+      const reply = await handler(message as Parameters<McpHandler>[0]);
+      this.heardSend(agent, entry, conversation, message, reply);
+      return reply;
     };
     entry.sessions = new AgentSessions({
       label: "opencode",

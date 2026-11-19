@@ -28,7 +28,10 @@ with the Buzz tools. Each thread is one continuing OpenCode session.
   OpenCode is signed in with (`opencode auth login`). Both sides are posted in the room as plain
   messages from the agent: your words under your name, its answer as its own. If you leave before it
   answers, the work carries on and the answer is still posted. Expect a few seconds per reply, more when
-  there's work to do.
+  there's work to do; a turn that runs long starts with a quick "On it". It hears you throughout: talk
+  over it to cut it off, or add to a request while it works. While you're in the Huddle, a message it
+  posts elsewhere that tags you is read aloud too, so you can leave a Huddle open and let it call on
+  you. Use headphones, or its own voice can cut it off.
 - A failed turn says so in its thread and tags you.
 
 ## Requirements
