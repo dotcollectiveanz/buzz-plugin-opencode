@@ -44,6 +44,8 @@ it("activates from plugin.js, registering the OpenCode type with its tabs", asyn
     },
   });
   expect(registered).toMatchObject({ id: "opencode", title: "OpenCode" });
+  // Huddles seat only agent types with voice.
+  expect(typeof registered?.voice).toBe("function");
   // Buzz's agent menu offers Share only with `exportShared`.
   expect(registered?.exportShared({ model: "openrouter/x", workspace: "~/x" })).toEqual({ runtime: "opencode", model: "openrouter/x" });
   expect(registered?.importShared({ runtime: "opencode", model: "openrouter/x" })).toMatchObject({ model: "openrouter/x" });

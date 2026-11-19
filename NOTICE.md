@@ -8,7 +8,8 @@ Parts of this plugin are copied from [block/buzz-app](https://github.com/block/b
 - `src/acp/process.ts`, `session.ts`, `agent-sessions.ts`, `steps.ts`, `types.ts` and
   `session-control.ts`: Buzz's ACP client, from `src/features/agent-harness/`. Changed: imports
   point at local files, and a conversation's session records the harness kit's cursor instead of a
-  timestamp (`newerCursor`).
+  timestamp (`newerCursor`), and `deliver` takes no cursor for a message from outside the
+  conversation, such as Huddle speech.
 - `src/acp/shims.ts`, `src/transcript-model.ts` and `src/sessions.ts`: small helpers from
   `src/buzz-mcp/message-tools.ts`, `src/bundled/claude-code/prompt.ts`,
   `src/features/agents/agent-config.ts`, `src/bundled/codex/config.ts`,

@@ -91,6 +91,8 @@ it("declares opencode acp and session export, and the Buzz tools", () => {
         // Reads a session back for Activity, given only its id.
         { id: "export", program: "opencode", args: ["session", "export"] },
       ],
+      // Huddle voice: speech in and out through OpenRouter (src/voice.ts).
+      networkOrigins: ["https://openrouter.ai"],
       mcp: true,
       files: true,
     },

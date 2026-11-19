@@ -256,7 +256,9 @@ export class AgentSessions {
   async deliver(
     key: string,
     text: string,
-    seen: string,
+    /** What the session is shown once it takes `text`; undefined keeps the
+     * last, for a message from outside the conversation, such as speech. */
+    seen: string | undefined,
     {
       steer = text,
       current,
