@@ -19,6 +19,7 @@ import {
   withSyncedSettings,
 } from "./settings";
 import { createTabs } from "./tabs";
+import { openVoice } from "./voice";
 
 export const TYPE_ID = "opencode";
 /** A turn's run returns once opencode has it, so this bounds only the hand-over. */
@@ -108,6 +109,8 @@ export function apply(ctx: Context) {
       run: (agent, place, action) => runtime.session(agent, place, action),
       subscribe: (listener) => runtime.subscribe(listener),
     },
+    // Huddle voice through OpenRouter: talk only, no tools (src/voice.ts).
+    ...(desktop ? { voice: (seat) => openVoice(seat, host) } : {}),
     run: (delivery) => runtime.run(delivery),
     runOnce: (turn) => runtime.runOnce(turn),
     timeoutMs: HANDOVER_MS,

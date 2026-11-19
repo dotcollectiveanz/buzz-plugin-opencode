@@ -12,6 +12,7 @@
       { "id": "opencode", "program": "opencode", "args": ["acp"] },
       { "id": "export", "program": "opencode", "args": ["session", "export"] }
     ],
+    "networkOrigins": ["https://openrouter.ai"],
     "mcp": true,
     "files": true
   }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 (2026-11-19)
+
+- **Huddle voice:** OpenCode agents can join a Huddle and talk. Your speech is cut into utterances,
+  transcribed by `google/gemini-2.5-flash` and answered aloud by `openai/gpt-audio-mini`, through
+  OpenRouter on the key OpenCode is signed in with. Both sides' words are posted in the Huddle. Voice
+  replies talk only: they run no tools. Updating asks you to approve access to `https://openrouter.ai`.
+
 ## 1.1.0 (2026-11-18)
 
 - **Share to the Marketplace:** the agent's card menu now offers **Share**, as it does for Buzz's own

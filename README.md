@@ -21,6 +21,12 @@ with the Buzz tools. Each thread is one continuing OpenCode session.
   lists the agent's name, picture, model and instructions under the `opencode` runtime; whoever adds
   it needs this plugin, and runs it on their own OpenCode and providers. The OpenCode agent, thinking
   level and workspace stay on your computer.
+- **Huddle voice:** start a Huddle in your DM with the agent, or add it from the Huddle's members, and
+  talk to it. Your speech is transcribed by `google/gemini-2.5-flash` and answered aloud by
+  `openai/gpt-audio-mini`, both through OpenRouter on the OpenRouter key OpenCode is signed in with
+  (`opencode auth login`). Both sides' words are posted in the Huddle. Voice replies only talk: they
+  don't run tools, read files or post; type a request in the chat for that. Expect a few seconds per
+  reply.
 - A failed turn says so in its thread and tags you.
 
 ## Requirements
@@ -47,7 +53,10 @@ To install straight from GitHub instead, enter `https://github.com/dotcollective
 
 - Run `opencode acp`, and `opencode session export <id>` (given only a session id) for transcripts.
 - Serve the Buzz tools to OpenCode on this computer (MCP), acting as the agent.
-- Read files you ask the agent to upload, from its workspace.
+- Read files you ask the agent to upload, from its workspace, and OpenCode's OpenRouter login
+  (`~/.local/share/opencode/auth.json`) for voice.
+- Reach `https://openrouter.ai`, for voice only. Your Huddle speech goes there to be transcribed and
+  answered.
 
 OpenCode runs commands as you, so an agent acts only on your own mentions, or ones you attested.
 
