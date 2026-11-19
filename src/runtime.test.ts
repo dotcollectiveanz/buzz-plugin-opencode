@@ -207,6 +207,10 @@ it("names sessions after the agent and where they are", () => {
 
 it("runs Huddle speech in the room's session, with its tools, and returns what to say", async () => {
   const buzz = fakeBuzz();
+  // The kit's tools and replies refuse a conversation it did not admit, so
+  // the voice turn must use the very object the kit hands back.
+  const room = Object.freeze({ key: CHANNEL, channel: CHANNEL, topLevel: true, where: "DM" });
+  buzz.harness.conversation.mockImplementation((async () => room) as never);
   const opencode = fakeOpencode(() => ({ stopReason: "end_turn" }), "It's sunny in Melbourne.");
   const oc = runtime(buzz, opencode.spawn);
   const seat = {
@@ -217,9 +221,23 @@ it("runs Huddle speech in the room's session, with its tools, and returns what t
   };
   const said = await oc.voiceTurn(seat as never, "What's the weather?", () => true);
   expect(said).toBe("It's sunny in Melbourne.");
+  expect(buzz.harness.conversation).toHaveBeenCalledWith(
+    expect.objectContaining({
+      channelId: CHANNEL,
+      agent: expect.objectContaining({ key: AGENT }),
+      trigger: expect.objectContaining({
+        type: "plugin",
+        plugin: "opencode-harness",
+        channel: CHANNEL,
+        topLevel: true,
+        text: "What's the weather?",
+      }),
+    }),
+    "channel",
+  );
   expect(buzz.harness.tools).toHaveBeenCalledWith(
     expect.objectContaining({ key: AGENT }),
-    expect.objectContaining({ key: CHANNEL, channel: CHANNEL, topLevel: true }),
+    room,
     expect.anything(),
   );
   const prompt = opencode.received.find((m) => m.method === "session/prompt");
@@ -231,9 +249,22 @@ it("runs Huddle speech in the room's session, with its tools, and returns what t
   await oc.voiceTurn(seat as never, "And tomorrow?", () => false);
   expect(buzz.harness.reply).toHaveBeenCalledWith(
     expect.objectContaining({ key: AGENT }),
-    expect.objectContaining({ key: CHANNEL }),
+    room,
     "It's sunny in Melbourne.",
   );
+  oc.dispose();
+});
+
+it("says why when Buzz won't admit the Huddle's conversation", async () => {
+  const buzz = fakeBuzz(false);
+  const opencode = fakeOpencode(() => ({ stopReason: "end_turn" }), "unused");
+  const oc = runtime(buzz, opencode.spawn);
+  const seat = {
+    agent: { key: AGENT, name: "Ada", config: DEFAULT_CONFIG },
+    conversation: { channelId: CHANNEL },
+  };
+  await expect(oc.voiceTurn(seat as never, "Hello?", () => true)).rejects.toThrow(/did not admit/);
+  expect(buzz.harness.tools).not.toHaveBeenCalled();
   oc.dispose();
 });
 

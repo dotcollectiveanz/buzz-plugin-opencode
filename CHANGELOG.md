@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 (2026-11-19)
+
+- **Huddle voice answers again:** every spoken request failed with "This conversation was not admitted
+  by agents.harness", because the voice turn made up its own conversation, which Buzz's tools and
+  replies refuse. It now has Buzz admit the room's conversation first, as this plugin's own local wake
+  at the room's top level.
+
 ## 1.2.0 (2026-11-19)
 
 - **Huddle voice:** OpenCode agents can join a Huddle and talk. `google/gemini-2.5-flash` transcribes
