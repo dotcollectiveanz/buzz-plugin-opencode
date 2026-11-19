@@ -5,7 +5,7 @@
 import type { AgentType, Context } from "./buzz";
 import { OpenCodeIcon } from "./icon";
 import { OpenCodeModels } from "./models";
-import { setReact } from "./react";
+import { React, setReact } from "./react";
 import { OpenCodeRuntime } from "./runtime";
 import {
   adopt,
@@ -19,6 +19,8 @@ import {
   withSyncedSettings,
 } from "./settings";
 import { createTabs } from "./tabs";
+import { GeminiKeySettings, readGeminiKey } from "./gemini";
+import { openLiveVoice } from "./live";
 import { openVoice } from "./voice";
 
 export const TYPE_ID = "opencode";
@@ -41,6 +43,17 @@ export function apply(ctx: Context) {
         resolveDirectory: host.resolveDirectory!.bind(host),
       })
     : undefined;
+  // The Gemini key for Huddle voice, in the plugin's own Settings card. Its
+  // service is optional: without it the agents still run.
+  if (desktop)
+    ctx.inject(["settingsCards"], (scope) => {
+      scope.settingsCards.register({
+        id: "voice",
+        title: "OpenCode voice",
+        group: "App",
+        component: () => <GeminiKeySettings host={host} />,
+      });
+    });
   if (desktop) {
     const sync = () => {
       const snapshot = agents.snapshot();
@@ -109,17 +122,19 @@ export function apply(ctx: Context) {
       run: (agent, place, action) => runtime.session(agent, place, action),
       subscribe: (listener) => runtime.subscribe(listener),
     },
-    // Huddle voice: speech in and out through OpenRouter, the work in the
+    // Huddle voice: speech in and out through Gemini Live or OpenRouter, the work in the
     // room's OpenCode session (src/voice.ts).
     ...(desktop
       ? {
           voice: async (seat) => {
-            const connection = await openVoice(
-              seat,
-              host,
-              (heard) => runtime.voiceTurn(seat, heard),
-              (speaker, text) => runtime.voicePost(seat, speaker, text),
-            );
+            const think = (heard: string) => runtime.voiceTurn(seat, heard);
+            const post = (speaker: "owner" | "agent", text: string) =>
+              runtime.voicePost(seat, speaker, text);
+            // Gemini Live when a Gemini key is set; otherwise OpenRouter.
+            const gemini = readGeminiKey();
+            const connection = gemini
+              ? await openLiveVoice(seat, gemini, think, post)
+              : await openVoice(seat, host, think, post);
             // While seated, what the agent posts for its owner elsewhere is
             // said aloud too.
             const off = runtime.onOwnerNeeded(seat.agent.key, (text) =>

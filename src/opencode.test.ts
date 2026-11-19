@@ -92,7 +92,7 @@ it("declares opencode acp and session export, and the Buzz tools", () => {
         { id: "export", program: "opencode", args: ["session", "export"] },
       ],
       // Huddle voice: speech in and out through OpenRouter (src/voice.ts).
-      networkOrigins: ["https://openrouter.ai"],
+      networkOrigins: ["https://openrouter.ai", "https://generativelanguage.googleapis.com"],
       mcp: true,
       files: true,
     },

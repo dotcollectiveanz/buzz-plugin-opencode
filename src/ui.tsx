@@ -138,17 +138,24 @@ export function TextInput({
   value,
   disabled,
   invalid,
+  type = "text",
+  placeholder,
   onChange,
 }: {
   id: string;
   value: string;
   disabled?: boolean;
   invalid?: boolean;
+  type?: "text" | "password";
+  placeholder?: string;
   onChange(value: string): void;
 }) {
   return (
     <input
       id={id}
+      type={type}
+      placeholder={placeholder}
+      autoComplete={type === "password" ? "off" : undefined}
       data-buzz-ui=""
       className="buzz-input"
       data-size="md"
