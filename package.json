@@ -1,6 +1,6 @@
 {
   "name": "buzz-opencode",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "description": "Buzz plugin: agents that run on your local OpenCode.",
   "type": "module",

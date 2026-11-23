@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0 (2026-11-24)
+
+- **Local voice with oMLX:** Huddles can listen and speak with models on this computer, through
+  oMLX: Parakeet listens and Kokoro speaks. Once warm, speaking 3.5 seconds of audio took 150 ms and
+  transcribing it 45 ms, so a reply starts as soon as the agent has written it. It's free and nothing
+  leaves the computer. The plugin finds oMLX's port, key and models itself.
+- **Choose the voice** in **Settings → OpenCode voice**: Automatic (local when oMLX serves voice
+  models, then Gemini Live with a key, then OpenRouter), Local, Gemini Live or OpenRouter.
+- Local voice runs a small Node.js helper (`node -e`, shown in full when Buzz asks you to approve the
+  update), since Buzz lets plugins reach only HTTPS and oMLX serves plain HTTP on this computer.
+
 ## 1.4.0 (2026-11-19)
 
 - **Live voice with Gemini:** add a Gemini API key in **Settings → OpenCode voice** and Huddles run on

@@ -17,7 +17,8 @@ check("manifest apiVersion 1", manifest.apiVersion === 1);
 const desc = Buffer.byteLength(manifest.description || "");
 check("manifest description is 1-280 bytes", desc >= 1 && desc <= 280, `${desc} bytes`);
 const processes = (manifest.host?.processes ?? []).map((p) => `${p.id}=${p.program} ${(p.args ?? []).join(" ")}`);
-check("manifest declares opencode acp and session export", processes.join(",") === "opencode=opencode acp,export=opencode session export", processes.join(","));
+const helper = readFileSync(join(root, "src/omlx-helper.cjs"), "utf8");
+check("manifest declares opencode acp, session export and the oMLX helper", processes.join(",") === `opencode=opencode acp,export=opencode session export,omlx=node -e ${helper}`, processes.map((p) => p.slice(0, 60)).join(","));
 check("manifest asks for MCP and files", manifest.host?.mcp === true && manifest.host?.files === true);
 check("manifest reaches only OpenRouter and Gemini, for voice", JSON.stringify(manifest.host?.networkOrigins) === '["https://openrouter.ai","https://generativelanguage.googleapis.com"]', JSON.stringify(manifest.host?.networkOrigins));
 

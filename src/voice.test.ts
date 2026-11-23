@@ -360,3 +360,35 @@ describe("spoken", () => {
     );
   });
 });
+
+describe("a given engine", () => {
+  it("listens and speaks with it, with no OpenRouter login", async () => {
+    const abort = new AbortController();
+    const seat = {
+      agent: { name: "Ada" },
+      conversation: { channelId: "room" },
+      signal: abort.signal,
+      output: vi.fn(async () => {}),
+      ended: vi.fn(),
+      thinking: vi.fn(),
+    };
+    const engine = {
+      listen: vi.fn(async () => "What's the build status?"),
+      speak: vi.fn(async () => ({ pcm: new Uint8Array(24_000 * 2 * 0.1) })),
+    };
+    const host = { readFile: async () => new TextEncoder().encode("{}"), request: vi.fn() };
+    const think = vi.fn(async () => "It passed.");
+    const post = vi.fn(async () => {});
+    const connection = await openVoice(seat as never, host as never, think, post, engine);
+    feed(connection, tone(0.2, 0));
+    feed(connection, tone(1, 0.3));
+    feed(connection, tone(1, 0));
+    await vi.waitFor(() => expect(seat.output).toHaveBeenCalledTimes(5), { timeout: 3000 });
+    expect(think).toHaveBeenCalledWith("What's the build status?");
+    expect(engine.speak).toHaveBeenCalledWith("It passed.");
+    expect(post).toHaveBeenCalledWith("owner", "What's the build status?");
+    expect(host.request).not.toHaveBeenCalled();
+    abort.abort();
+    connection.close();
+  });
+});
