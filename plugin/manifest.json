@@ -5,14 +5,42 @@
   "description": "Buzz agents that run on your local OpenCode, with any provider it supports. Each thread an agent is mentioned in is one continuing OpenCode session.",
   "discovery": {
     "category": "agents",
-    "tags": ["code", "coding-agents", "opencode"]
+    "tags": [
+      "code",
+      "coding-agents",
+      "opencode"
+    ]
   },
   "host": {
     "processes": [
-      { "id": "opencode", "program": "opencode", "args": ["acp"] },
-      { "id": "export", "program": "opencode", "args": ["session", "export"] }
+      {
+        "id": "opencode",
+        "program": "opencode",
+        "args": [
+          "acp"
+        ]
+      },
+      {
+        "id": "export",
+        "program": "opencode",
+        "args": [
+          "session",
+          "export"
+        ]
+      },
+      {
+        "id": "omlx",
+        "program": "node",
+        "args": [
+          "-e",
+          "// Huddle voice's bridge to a local oMLX server. Buzz lets plugins reach only\n// HTTPS origins, and oMLX serves plain HTTP on this computer, so the plugin\n// runs this with `node -e` (plugin/manifest.json) and talks to it in JSON\n// lines on stdin and stdout. It reaches only 127.0.0.1 on oMLX's own port,\n// and only oMLX's model list and speech routes, with oMLX's own API key, read\n// from its settings. Each request is {id, op, ...}; each answer {id, ok, ...}.\n\"use strict\";\nconst fs = require(\"node:fs\");\nconst os = require(\"node:os\");\nconst path = require(\"node:path\");\nconst readline = require(\"node:readline\");\n\nfunction base() {\n  try {\n    const set = fs\n      .readFileSync(\n        path.join(os.homedir(), \"Library/Application Support/oMLX/base-path\"),\n        \"utf8\",\n      )\n      .trim();\n    if (set) return set;\n  } catch {}\n  return path.join(os.homedir(), \".omlx\");\n}\nfunction server() {\n  let settings = {};\n  try {\n    settings = JSON.parse(\n      fs.readFileSync(path.join(base(), \"settings.json\"), \"utf8\"),\n    );\n  } catch {}\n  const port = Number(settings.server?.port) || 8000;\n  const key = settings.auth?.api_key;\n  return {\n    url: `http://127.0.0.1:${port}`,\n    headers: key ? { Authorization: `Bearer ${key}` } : {},\n  };\n}\nasync function call(route, init) {\n  const { url, headers } = server();\n  const response = await fetch(url + route, {\n    ...init,\n    headers: { ...headers, ...init.headers },\n    signal: AbortSignal.timeout(120_000),\n  });\n  if (!response.ok) {\n    const text = await response.text().catch(() => \"\");\n    let reason = text.slice(0, 300);\n    try {\n      const error = JSON.parse(text);\n      reason = error.detail || error.error?.message || reason;\n    } catch {}\n    throw new Error(`oMLX answered ${response.status}: ${reason}`);\n  }\n  return response;\n}\nconst ops = {\n  async models() {\n    const body = await (await call(\"/v1/models\", { method: \"GET\" })).json();\n    return { models: (body.data || []).map((model) => model.id) };\n  },\n  async listen({ model, wav }) {\n    const form = new FormData();\n    form.set(\"model\", String(model));\n    form.set(\n      \"file\",\n      new Blob([Buffer.from(String(wav), \"base64\")], { type: \"audio/wav\" }),\n      \"speech.wav\",\n    );\n    const body = await (\n      await call(\"/v1/audio/transcriptions\", { method: \"POST\", body: form })\n    ).json();\n    return { text: String(body.text || \"\").trim() };\n  },\n  async speak({ model, voice, text }) {\n    const response = await call(\"/v1/audio/speech\", {\n      method: \"POST\",\n      headers: { \"Content-Type\": \"application/json\" },\n      body: JSON.stringify({\n        model: String(model),\n        voice: String(voice),\n        input: String(text),\n        response_format: \"pcm\",\n      }),\n    });\n    return { pcm: Buffer.from(await response.arrayBuffer()).toString(\"base64\") };\n  },\n};\nconst out = (answer) => process.stdout.write(`${JSON.stringify(answer)}\\n`);\nreadline.createInterface({ input: process.stdin }).on(\"line\", (line) => {\n  let request;\n  try {\n    request = JSON.parse(line);\n  } catch {\n    return;\n  }\n  const op = Object.hasOwn(ops, request.op) ? ops[request.op] : undefined;\n  if (!op) return out({ id: request.id, ok: false, error: \"Unknown request\" });\n  op(request).then(\n    (result) => out({ id: request.id, ok: true, ...result }),\n    (error) =>\n      out({\n        id: request.id,\n        ok: false,\n        // fetch fails this way only when it can't reach the server at all.\n        error:\n          error?.message === \"fetch failed\"\n            ? \"oMLX isn't running\"\n            : String(error?.message || error),\n      }),\n  );\n});\n"
+        ]
+      }
     ],
-    "networkOrigins": ["https://openrouter.ai", "https://generativelanguage.googleapis.com"],
+    "networkOrigins": [
+      "https://openrouter.ai",
+      "https://generativelanguage.googleapis.com"
+    ],
     "mcp": true,
     "files": true
   }

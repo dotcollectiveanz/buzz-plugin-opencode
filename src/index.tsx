@@ -19,9 +19,10 @@ import {
   withSyncedSettings,
 } from "./settings";
 import { createTabs } from "./tabs";
-import { GeminiKeySettings, readGeminiKey } from "./gemini";
+import { GeminiKeySettings, readGeminiKey, readVoiceEngine } from "./gemini";
 import { openLiveVoice } from "./live";
-import { openVoice } from "./voice";
+import { localModels, OmlxHelper, omlxEngine } from "./omlx";
+import { type Engine, openVoice } from "./voice";
 
 export const TYPE_ID = "opencode";
 /** A turn's run returns once opencode has it, so this bounds only the hand-over. */
@@ -43,15 +44,24 @@ export function apply(ctx: Context) {
         resolveDirectory: host.resolveDirectory!.bind(host),
       })
     : undefined;
-  // The Gemini key for Huddle voice, in the plugin's own Settings card. Its
-  // service is optional: without it the agents still run.
+  // Local voice talks to oMLX through one helper process, started when first
+  // needed.
+  const omlx = desktop
+    ? // biome-ignore lint/style/noNonNullAssertion: checked by `desktop`.
+      new OmlxHelper(host.spawn!.bind(host))
+    : undefined;
+  const checkLocal = omlx
+    ? () => localModels(omlx)
+    : async () => ({ error: "needs the desktop app" });
+  // Huddle voice's settings, in the plugin's own Settings card. Its service
+  // is optional: without it the agents still run.
   if (desktop)
     ctx.inject(["settingsCards"], (scope) => {
       scope.settingsCards.register({
         id: "voice",
         title: "OpenCode voice",
         group: "App",
-        component: () => <GeminiKeySettings host={host} />,
+        component: () => <GeminiKeySettings host={host} local={checkLocal} />,
       });
     });
   if (desktop) {
@@ -65,6 +75,7 @@ export function apply(ctx: Context) {
     ctx.effect(() => () => {
       unsubscribe();
       runtime.dispose();
+      void omlx?.stop();
     });
   }
 
@@ -122,7 +133,7 @@ export function apply(ctx: Context) {
       run: (agent, place, action) => runtime.session(agent, place, action),
       subscribe: (listener) => runtime.subscribe(listener),
     },
-    // Huddle voice: speech in and out through Gemini Live or OpenRouter, the work in the
+    // Huddle voice: speech in and out through oMLX, Gemini Live or OpenRouter, the work in the
     // room's OpenCode session (src/voice.ts).
     ...(desktop
       ? {
@@ -130,11 +141,23 @@ export function apply(ctx: Context) {
             const think = (heard: string) => runtime.voiceTurn(seat, heard);
             const post = (speaker: "owner" | "agent", text: string) =>
               runtime.voicePost(seat, speaker, text);
-            // Gemini Live when a Gemini key is set; otherwise OpenRouter.
+            // The voice chosen in Settings. Automatic: local oMLX models when
+            // oMLX serves them, then Gemini Live with a key, then OpenRouter.
+            const choice = readVoiceEngine();
             const gemini = readGeminiKey();
-            const connection = gemini
-              ? await openLiveVoice(seat, gemini, think, post)
-              : await openVoice(seat, host, think, post);
+            let engine: Engine | undefined;
+            if (omlx && (choice === "local" || choice === "auto")) {
+              const models = await localModels(omlx);
+              if (!("error" in models)) engine = omlxEngine(omlx, models);
+              else if (choice === "local")
+                throw new Error(`Local voice is unavailable: ${models.error}`);
+            }
+            if (!engine && choice === "gemini" && !gemini)
+              throw new Error("Add a Gemini API key in Settings → OpenCode voice");
+            const connection =
+              !engine && gemini && (choice === "gemini" || choice === "auto")
+                ? await openLiveVoice(seat, gemini, think, post)
+                : await openVoice(seat, host, think, post, engine);
             // While seated, what the agent posts for its owner elsewhere is
             // said aloud too.
             const off = runtime.onOwnerNeeded(seat.agent.key, (text) =>

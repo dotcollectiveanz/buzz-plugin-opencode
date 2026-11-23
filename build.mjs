@@ -3,9 +3,22 @@
 //   node build.mjs --dev    unminified build into .dev/plugin.js
 // React comes from Buzz as `ctx.react`: JSX compiles to React.createElement
 // against src/react.ts, and nothing is imported at runtime.
+import { readFileSync, writeFileSync } from "node:fs";
 import { build } from "esbuild";
 
 const dev = process.argv.includes("--dev");
+
+// The oMLX helper runs as `node -e <src/omlx-helper.cjs>`, declared in the
+// manifest so Buzz shows exactly what it runs: keep the two the same.
+const manifestPath = new URL("plugin/manifest.json", import.meta.url);
+const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+const helper = readFileSync(new URL("src/omlx-helper.cjs", import.meta.url), "utf8");
+manifest.host.processes = [
+  ...manifest.host.processes.filter((p) => p.id !== "omlx"),
+  { id: "omlx", program: "node", args: ["-e", helper] },
+];
+const json = `${JSON.stringify(manifest, null, 2)}\n`;
+if (json !== readFileSync(manifestPath, "utf8")) writeFileSync(manifestPath, json);
 const result = await build({
   entryPoints: ["src/index.tsx"],
   outfile: dev ? ".dev/plugin.js" : "plugin/plugin.js",

@@ -34,8 +34,15 @@ with the Buzz tools. Each thread is one continuing OpenCode session.
   you. Use headphones, or its own voice can cut it off.
 - **Live voice with Gemini:** add a Gemini API key in **Settings → OpenCode voice** and Huddles run on
   Gemini Live instead, for listening and speaking, with no OpenRouter needed. It's a speech-to-speech
-  model that talks with you straight away and hands real work to the agent in the background, so it's a conversation rather than
-  turn by turn.
+  model that talks with you straight away and hands real work to the agent in the background, so it's
+  a conversation rather than turn by turn.
+- **Local voice with oMLX:** if [oMLX](https://github.com/jundot/omlx) is running with a speech-to-text
+  model (such as `mlx-community/parakeet-tdt-0.6b-v3`) and a text-to-speech model (such as
+  `mlx-community/Kokoro-82M-bf16`), Huddles listen and speak on this computer: free, private, and a
+  fraction of a second each way once warm. Nothing to set up: the plugin finds oMLX's port, key and
+  models in `~/.omlx`. Pick the voice in **Settings → OpenCode voice**: Automatic uses local, then
+  Gemini Live with a key, then OpenRouter. The first Huddle after oMLX starts takes up to half a
+  minute while it loads the models.
 - A failed turn says so in its thread and tags you.
 
 ## Requirements
@@ -43,6 +50,8 @@ with the Buzz tools. Each thread is one continuing OpenCode session.
 - Buzz desktop 0.7 (preview 251 or later) on macOS.
 - [OpenCode](https://opencode.ai) **2.2 or later** on your PATH, signed in to a provider
   (`opencode auth login`). Earlier versions don't tell Buzz which conversation a tool call belongs to.
+
+- For local voice: oMLX, and Node.js 22 or later on your PATH.
 
 ## Install
 
@@ -61,6 +70,9 @@ To install straight from GitHub instead, enter `https://github.com/dotcollective
 ### Access it asks for
 
 - Run `opencode acp`, and `opencode session export <id>` (given only a session id) for transcripts.
+- Run `node -e` with the oMLX helper (`src/omlx-helper.cjs`), for local voice. It reaches only oMLX
+  on `127.0.0.1` with oMLX's own key, from `~/.omlx/settings.json`, and only its model list and
+  speech routes.
 - Serve the Buzz tools to OpenCode on this computer (MCP), acting as the agent.
 - Read files you ask the agent to upload, from its workspace, and OpenCode's OpenRouter login
   (`~/.local/share/opencode/auth.json`) for voice.

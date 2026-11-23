@@ -90,6 +90,12 @@ it("declares opencode acp and session export, and the Buzz tools", () => {
         { id: "opencode", program: "opencode", args: ["acp"] },
         // Reads a session back for Activity, given only its id.
         { id: "export", program: "opencode", args: ["session", "export"] },
+        // Huddle voice's bridge to a local oMLX server (src/omlx-helper.cjs).
+        {
+          id: "omlx",
+          program: "node",
+          args: ["-e", readFileSync(new URL("./omlx-helper.cjs", import.meta.url), "utf8")],
+        },
       ],
       // Huddle voice: speech in and out through OpenRouter (src/voice.ts).
       networkOrigins: ["https://openrouter.ai", "https://generativelanguage.googleapis.com"],
